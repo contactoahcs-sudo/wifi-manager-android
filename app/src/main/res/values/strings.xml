@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">Wifi Manager</string>
+    <string name="pulsa_actualizar">Pulsa el botón para ver los equipos conectados.</string>
+    <string name="actualizar">Actualizar</string>
+    <string name="bloquear">Bloquear</string>
+    <string name="horario">Horario</string>
+    <string name="config_router">Configurar router</string>
+    <string name="config_ayuda">Pon la IP de tu Mi Router y la contraseña del panel (miwifi.com), no la del WiFi. Se guarda solo en este teléfono.</string>
+    <string name="ip_router">IP del router (ej. 192.168.31.1)</string>
+    <string name="pass_router">Contraseña de administrador del router</string>
+    <string name="probar_guardar">Probar y guardar</string>
+    <string name="cancelar">Cancelar</string>
+    <string name="guardar">Guardar</string>
+    <string name="quitar">Quitar</string>
+    <string name="probando">Probando conexión…</string>
+    <string name="cargando">Cargando equipos…</string>
+    <string name="conectado_ok">Conectado al router.</string>
+    <string name="no_conecto">No se pudo conectar</string>
+    <string name="equipos_conectados">%d equipos conectados</string>
+    <string name="error_generico">Ocurrió un error. Revisa la conexión al router.</string>
+    <string name="bloqueando">Bloqueando…</string>
+    <string name="permitiendo">Permitiendo…</string>
+    <string name="hecho">Hecho</string>
+    <string name="horario_de">Horario de %s</string>
+    <string name="horario_ayuda">Franja: dias|inicio|fin. Días 0=Lun..6=Dom. Ej: 01234|22:00|06:00 (Lun-Vie de 22:00 a 06:00). Varias separadas por ; </string>
+    <string name="horario_guardado">Horario guardado</string>
+    <string name="horario_quitado">Horario quitado</string>
+</resources>
