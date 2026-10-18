@@ -27,6 +27,12 @@ object Prefs {
     fun allScheduleKeys(c: Context): List<String> =
         sp(c).all.keys.filter { it.startsWith("sched_") }.map { it.removePrefix("sched_") }
 
+    // Denegar automáticamente a los equipos con MAC aleatoria.
+    fun isAutoBlockRandom(c: Context): Boolean = sp(c).getBoolean("auto_block_random", false)
+    fun setAutoBlockRandom(c: Context, value: Boolean) {
+        sp(c).edit().putBoolean("auto_block_random", value).apply()
+    }
+
     // Apodo / nombre interno por equipo. Se guarda permanentemente (SharedPreferences),
     // sobrevive al cerrar y reabrir la app. Útil para equipos con MAC aleatoria.
     fun getAlias(c: Context, mac: String): String = sp(c).getString("alias_$mac", "") ?: ""

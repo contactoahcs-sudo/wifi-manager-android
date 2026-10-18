@@ -31,6 +31,12 @@
     <string name="horario_ayuda">Franja: dias|inicio|fin. Días 0=Lun..6=Dom. Ej: 01234|22:00|06:00 (Lun-Vie de 22:00 a 06:00). Varias separadas por ; </string>
     <string name="horario_guardado">Horario guardado</string>
     <string name="horario_quitado">Horario quitado</string>
+    <string name="denegar_mac_aleatoria">Denegar MAC aleatoria</string>
+    <string name="denegar_explicacion">Al activar esto, la app bloqueará automáticamente a cualquier equipo que se conecte con MAC aleatoria (privada).\n\nTus equipos con NOMBRE asignado NO se bloquean (se consideran de confianza), así que ponle nombre a los tuyos primero.\n\nUn equipo bloqueado se queda sin internet; para entrar, su dueño tendrá que cambiar en su teléfono el WiFi a \"MAC del dispositivo\" (fija) y reconectarse. Ni la app ni el router pueden cambiar la MAC de otro teléfono a distancia.</string>
+    <string name="activar">Activar</string>
+    <string name="denegar_activado">Denegar MAC aleatoria: ACTIVADO</string>
+    <string name="denegar_desactivado">Denegar MAC aleatoria: desactivado</string>
+    <string name="auto_bloqueados">%d equipo(s) con MAC aleatoria bloqueados</string>
     <string name="buscar_actualizacion">Buscar actualización</string>
     <string name="buscando_update">Buscando actualización…</string>
     <string name="hay_actualizacion">Actualización disponible</string>

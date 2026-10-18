@@ -48,16 +48,45 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menu.add(0, 1, 0, getString(R.string.config_router))
-        menu.add(0, 2, 1, getString(R.string.buscar_actualizacion))
+        menu.add(0, 3, 1, getString(R.string.denegar_mac_aleatoria)).isCheckable = true
+        menu.add(0, 2, 2, getString(R.string.buscar_actualizacion))
         return true
+    }
+
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        menu.findItem(3)?.isChecked = Prefs.isAutoBlockRandom(this)
+        return super.onPrepareOptionsMenu(menu)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
             1 -> { showConfigDialog(); return true }
             2 -> { checkUpdate(); return true }
+            3 -> { toggleAutoBlockRandom(); return true }
         }
         return super.onOptionsItemSelected(item)
+    }
+
+    private fun toggleAutoBlockRandom() {
+        if (Prefs.isAutoBlockRandom(this)) {
+            // Estaba activo → desactivar directo.
+            Prefs.setAutoBlockRandom(this, false)
+            Toast.makeText(this, R.string.denegar_desactivado, Toast.LENGTH_SHORT).show()
+            invalidateOptionsMenu()
+        } else {
+            // Explicamos antes de activar (bloquea a terceros).
+            AlertDialog.Builder(this)
+                .setTitle(R.string.denegar_mac_aleatoria)
+                .setMessage(R.string.denegar_explicacion)
+                .setPositiveButton(R.string.activar) { _, _ ->
+                    Prefs.setAutoBlockRandom(this, true)
+                    Toast.makeText(this, R.string.denegar_activado, Toast.LENGTH_SHORT).show()
+                    invalidateOptionsMenu()
+                    refresh()
+                }
+                .setNegativeButton(R.string.cancelar, null)
+                .show()
+        }
     }
 
     // ---- configuración del router ----
@@ -117,6 +146,7 @@ class MainActivity : AppCompatActivity() {
                 val conApodo = devs.map { it.copy(alias = Prefs.getAlias(this@MainActivity, it.mac)) }
                 adapter.update(conApodo)
                 status.text = getString(R.string.equipos_conectados, devs.size)
+                if (Prefs.isAutoBlockRandom(this@MainActivity)) enforceRandomBlock(conApodo)
             }.onFailure { e ->
                 status.text = e.message ?: getString(R.string.error_generico)
             }
@@ -165,6 +195,33 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton(R.string.cancelar, null)
             .show()
+    }
+
+    // ---- denegar equipos con MAC aleatoria ----
+    // Bloquea los equipos de MAC aleatoria, EXCEPTO los que tengan nombre asignado
+    // (esos se consideran de confianza). Así nadie entra con MAC aleatoria salvo tus equipos.
+    private fun enforceRandomBlock(devs: List<Device>) {
+        val objetivos = devs.filter { Vendors.isRandom(it.mac) && it.alias.isBlank() && !it.blocked }
+        if (objetivos.isEmpty()) return
+        lifecycleScope.launch {
+            val n = withContext(Dispatchers.IO) {
+                var c = 0
+                try {
+                    val client = MiWifiClient(
+                        Prefs.getIp(this@MainActivity),
+                        Prefs.getPassword(this@MainActivity)
+                    )
+                    for (t in objetivos) {
+                        try { client.setBlock(t.mac, true); c++ } catch (_: Exception) {}
+                    }
+                } catch (_: Exception) {}
+                c
+            }
+            if (n > 0) {
+                Toast.makeText(this@MainActivity, getString(R.string.auto_bloqueados, n), Toast.LENGTH_SHORT).show()
+                refresh()
+            }
+        }
     }
 
     // ---- nombre interno (apodo) por equipo ----

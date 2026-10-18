@@ -48,4 +48,12 @@ object Vendors {
     }
 
     fun size(): Int = table.size
+
+    /** true si la MAC es aleatoria/privada (bit "administrada localmente"). */
+    fun isRandom(mac: String): Boolean {
+        val h = normalize(mac)
+        if (h.length < 2) return false
+        val first = h.substring(0, 2).toIntOrNull(16) ?: return false
+        return first and 0x02 != 0
+    }
 }

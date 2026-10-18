@@ -37,6 +37,21 @@ class ScheduleWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
                 client.setBlock(mac, shouldBlock)
             } catch (_: Exception) { /* seguimos con los demás */ }
         }
+
+        // Denegar MAC aleatoria en segundo plano (excepto equipos con nombre asignado).
+        if (Prefs.isAutoBlockRandom(applicationContext)) {
+            Vendors.init(applicationContext)
+            try {
+                for (d in client.deviceList()) {
+                    if (Vendors.isRandom(d.mac) &&
+                        Prefs.getAlias(applicationContext, d.mac).isBlank() &&
+                        !d.blocked
+                    ) {
+                        try { client.setBlock(d.mac, true) } catch (_: Exception) {}
+                    }
+                }
+            } catch (_: Exception) { /* si falla la lista, lo reintenta el siguiente ciclo */ }
+        }
         Result.success()
     }
 
