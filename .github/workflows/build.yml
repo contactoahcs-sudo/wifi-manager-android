@@ -5,6 +5,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,9 +29,26 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
           name: WifiManager-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Publish APK to 'apk' branch
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk /tmp/WifiManager.apk
+          cd "$RUNNER_TEMP"
+          rm -rf pub && mkdir pub && cd pub
+          git init -q
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git checkout -q -b apk
+          cp /tmp/WifiManager.apk ./WifiManager.apk
+          echo "APK generado por GitHub Actions. Descarga WifiManager.apk." > README.md
+          git add -f WifiManager.apk README.md
+          git commit -q -m "APK build ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
