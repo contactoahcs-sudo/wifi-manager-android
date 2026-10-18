@@ -108,37 +108,56 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
             loggedIn = false; ensure()
             body = get("/html/bbsp/common/GetLanUserDevInfo.asp")
         }
-        lastDebug = lastDebug + "\n--- GetLanUserDevInfo (final) ---\n" + body.takeLast(2500)
+        lastDebug = lastDebug + "\n" + resumen(body)
         return parse(body)
     }
 
     companion object {
-        // Este firmware (Totalplay) usa USERDeviceNew(Domain, IpAddr, MacAddr, Port, IpType,
-        // DevType, DevStatus, PortType, Time, HostName, IPv4Enabled, IPv6Enabled, DeviceType,
-        // UserDevAlias, UserSpecifiedDeviceType, LeaseTimeRemaining, RealMacAddr).
-        // Otros usan USERDevice(...) con el mismo orden en los primeros 16 campos.
-        private val ENTRY = Regex("""new\s+USERDevice(?:New)?\s*\((.*?)\)\s*[,)]""", RegexOption.DOT_MATCHES_ALL)
-        private val MAC = Regex("""([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})""")
-        private val IPV4 = Regex("""\b(\d{1,3}(?:\.\d{1,3}){3})\b""")
+        // Cualquier "new Algo( ... )" cuyo contenido traiga una MAC es un equipo.
+        // Firmwares vistos: USERDevice(...), USERDeviceNew(...) (Totalplay), stUserDevInfo(...).
+        private val ENTRY = Regex("""new\s+([A-Za-z_]\w*)\s*\(([^()]*)\)""", RegexOption.DOT_MATCHES_ALL)
+        private val ESC = Regex("""\\x([0-9A-Fa-f]{2})|\\u([0-9A-Fa-f]{4})""")
+        private val MAC = Regex("""^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$""")
+        private val IPV4 = Regex("""^\d{1,3}(?:\.\d{1,3}){3}$""")
+
+        /** El firmware codifica ':' '.' '-' etc. como \x3a, \x2e, \x2d; los decodificamos. */
+        private fun unescape(v: String): String = ESC.replace(v) { m ->
+            val hex = m.groupValues[1].ifEmpty { m.groupValues[2] }
+            hex.toInt(16).toChar().toString()
+        }
 
         private fun clean(v: String?): String {
-            val t = v?.trim()?.trim('"', '\'')?.trim() ?: ""
+            val t = unescape(v?.trim()?.trim('"', '\'')?.trim() ?: "")
             return if (t == "--" || t == "-") "" else t
         }
 
         fun parse(body: String): List<Device> {
             val out = ArrayList<Device>()
+            val vistos = HashSet<String>()
             for (m in ENTRY.findAll(body)) {
-                val f = m.groupValues[1].split(",")
-                // Saltamos la definición de la función (sus "campos" no son datos).
-                if (f.size < 10 || f.any { it.contains("function", true) }) continue
-                val mac = clean(f.getOrNull(2)).uppercase()
-                if (!MAC.matches(mac)) continue
-                val ip = clean(f.getOrNull(1)).takeIf { IPV4.matches(it) } ?: ""
-                val online = clean(f.getOrNull(6)).equals("Online", true)
-                val host = clean(f.getOrNull(9))
-                val aliasRouter = clean(f.getOrNull(13))
-                val name = aliasRouter.ifBlank { host }
+                if (m.groupValues[1].equals("Array", true)) continue
+                val f = m.groupValues[2].split(",").map { clean(it) }
+                if (f.size < 3) continue
+                // La MAC manda: si no hay, no es un equipo (p. ej. la definición de la función).
+                val macIdx = f.indexOfFirst { MAC.matches(it) }
+                if (macIdx < 0) continue
+                val mac = f[macIdx].uppercase()
+                if (!vistos.add(mac)) continue
+                val ip = f.firstOrNull { IPV4.matches(it) } ?: ""
+                val online = f.any { it.equals("Online", true) } || m.groupValues[1].contains("Wifi", true)
+                // Orden conocido: ...,DevStatus(6),PortType,Time,HostName(9),...,UserDevAlias(13)
+                val alias = f.getOrNull(13).orEmpty()
+                val host = f.getOrNull(9).orEmpty()
+                val name = when {
+                    alias.isNotBlank() && !alias.equals("Online", true) && !alias.equals("Offline", true) -> alias
+                    host.isNotBlank() && !host.equals("Online", true) && !host.equals("Offline", true) -> host
+                    else -> f.drop(macIdx + 1).firstOrNull {
+                        it.length > 1 && it.any { c -> c.isLetter() } && !IPV4.matches(it) &&
+                            !it.equals("Online", true) && !it.equals("Offline", true) &&
+                            !it.equals("DHCP", true) && !it.equals("Static", true) &&
+                            !it.startsWith("LAN", true) && !it.startsWith("SSID", true) && !it.startsWith("WLAN", true)
+                    } ?: ""
+                }
                 out.add(Device(
                     mac = mac, ip = ip, name = name,
                     vendor = Vendors.lookup(mac),
@@ -147,6 +166,21 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
                 ))
             }
             return out
+        }
+
+        /** Resumen útil para ajustar el lector: constructores encontrados y el trozo con la lista. */
+        fun resumen(body: String): String {
+            val ctors = ENTRY.findAll(body).map { it.groupValues[1] }.groupingBy { it }.eachCount()
+            val sb = StringBuilder()
+            sb.append("Tamaño respuesta: ${body.length} chars\n")
+            sb.append("Constructores: $ctors\n").append("Equipos con MAC: ${parse(body).size}\n")
+            val i = body.indexOf("UserDevinfo = new Array").let { if (it < 0) body.indexOf("new Array(") else it }
+            if (i >= 0) {
+                sb.append("--- Lista (desde 'new Array') ---\n").append(body.substring(i, minOf(body.length, i + 1800)))
+            } else {
+                sb.append("--- No se encontró 'new Array(' ---\n").append(body.takeLast(800))
+            }
+            return sb.toString()
         }
     }
 
