@@ -49,18 +49,39 @@
         <Button
             android:id="@+id/btnBlock"
             style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
+            android:insetLeft="0dp"
+            android:insetRight="0dp"
+            android:paddingHorizontal="4dp"
             android:textSize="12sp"
             android:text="@string/bloquear" />
 
         <Button
             android:id="@+id/btnSchedule"
             style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="6dp"
+            android:insetLeft="0dp"
+            android:insetRight="0dp"
+            android:paddingHorizontal="4dp"
             android:textSize="12sp"
             android:text="@string/horario" />
+
+        <Button
+            android:id="@+id/btnRename"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:insetLeft="0dp"
+            android:insetRight="0dp"
+            android:paddingHorizontal="4dp"
+            android:textSize="12sp"
+            android:text="@string/nombre" />
     </LinearLayout>
 </LinearLayout>

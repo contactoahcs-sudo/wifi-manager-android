@@ -26,4 +26,13 @@ object Prefs {
     }
     fun allScheduleKeys(c: Context): List<String> =
         sp(c).all.keys.filter { it.startsWith("sched_") }.map { it.removePrefix("sched_") }
+
+    // Apodo / nombre interno por equipo. Se guarda permanentemente (SharedPreferences),
+    // sobrevive al cerrar y reabrir la app. Útil para equipos con MAC aleatoria.
+    fun getAlias(c: Context, mac: String): String = sp(c).getString("alias_$mac", "") ?: ""
+    fun setAlias(c: Context, mac: String, value: String) {
+        val v = value.trim()
+        if (v.isEmpty()) sp(c).edit().remove("alias_$mac").apply()
+        else sp(c).edit().putString("alias_$mac", v).apply()
+    }
 }

@@ -37,7 +37,7 @@ class MainActivity : AppCompatActivity() {
         status = findViewById(R.id.status)
         val list = findViewById<RecyclerView>(R.id.list)
         list.layoutManager = LinearLayoutManager(this)
-        adapter = DeviceAdapter(emptyList(), ::onBlockToggle, ::onSchedule)
+        adapter = DeviceAdapter(emptyList(), ::onBlockToggle, ::onSchedule, ::onRename)
         list.adapter = adapter
 
         findViewById<FloatingActionButton>(R.id.refresh).setOnClickListener { refresh() }
@@ -113,7 +113,9 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) { Result.failure(e) }
             }
             res.onSuccess { devs ->
-                adapter.update(devs)
+                // Aplicamos el apodo guardado (si existe) a cada equipo antes de mostrarlo.
+                val conApodo = devs.map { it.copy(alias = Prefs.getAlias(this@MainActivity, it.mac)) }
+                adapter.update(conApodo)
                 status.text = getString(R.string.equipos_conectados, devs.size)
             }.onFailure { e ->
                 status.text = e.message ?: getString(R.string.error_generico)
@@ -160,6 +162,31 @@ class MainActivity : AppCompatActivity() {
             .setNeutralButton(R.string.quitar) { _, _ ->
                 Prefs.setSchedule(this, d.mac, "")
                 Toast.makeText(this, R.string.horario_quitado, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.cancelar, null)
+            .show()
+    }
+
+    // ---- nombre interno (apodo) por equipo ----
+    private fun onRename(d: Device) {
+        val input = EditText(this)
+        input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+        input.hint = getString(R.string.nombre_hint)
+        input.setText(Prefs.getAlias(this, d.mac))
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.nombre_de, d.displayName()))
+            .setMessage(getString(R.string.nombre_ayuda, d.mac))
+            .setView(input)
+            .setPositiveButton(R.string.guardar) { _, _ ->
+                Prefs.setAlias(this, d.mac, input.text.toString())
+                Toast.makeText(this, R.string.nombre_guardado, Toast.LENGTH_SHORT).show()
+                refresh()
+            }
+            .setNeutralButton(R.string.quitar) { _, _ ->
+                Prefs.setAlias(this, d.mac, "")
+                Toast.makeText(this, R.string.nombre_quitado, Toast.LENGTH_SHORT).show()
+                refresh()
             }
             .setNegativeButton(R.string.cancelar, null)
             .show()

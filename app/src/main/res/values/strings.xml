@@ -4,6 +4,12 @@
     <string name="actualizar">Actualizar</string>
     <string name="bloquear">Bloquear</string>
     <string name="horario">Horario</string>
+    <string name="nombre">Nombre</string>
+    <string name="nombre_de">Nombre de %s</string>
+    <string name="nombre_hint">Ej: Celular de Jesús, TV sala…</string>
+    <string name="nombre_ayuda">Ponle un nombre para reconocerlo (sobre todo si usa MAC aleatoria). Se guarda en este teléfono y queda ligado a la MAC %s.</string>
+    <string name="nombre_guardado">Nombre guardado</string>
+    <string name="nombre_quitado">Nombre quitado</string>
     <string name="config_router">Configurar router</string>
     <string name="config_ayuda">Pon la IP de tu Mi Router y la contraseña del panel (miwifi.com), no la del WiFi. Se guarda solo en este teléfono.</string>
     <string name="ip_router">IP del router (ej. 192.168.31.1)</string>

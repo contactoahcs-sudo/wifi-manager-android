@@ -11,7 +11,8 @@ import androidx.recyclerview.widget.RecyclerView
 class DeviceAdapter(
     private var items: List<Device>,
     private val onBlock: (Device) -> Unit,
-    private val onSchedule: (Device) -> Unit
+    private val onSchedule: (Device) -> Unit,
+    private val onRename: (Device) -> Unit
 ) : RecyclerView.Adapter<DeviceAdapter.VH>() {
 
     class VH(v: View) : RecyclerView.ViewHolder(v) {
@@ -20,6 +21,7 @@ class DeviceAdapter(
         val detalle: TextView = v.findViewById(R.id.detalle)
         val btnBlock: Button = v.findViewById(R.id.btnBlock)
         val btnSchedule: Button = v.findViewById(R.id.btnSchedule)
+        val btnRename: Button = v.findViewById(R.id.btnRename)
     }
 
     fun update(list: List<Device>) {
@@ -38,7 +40,9 @@ class DeviceAdapter(
     override fun onBindViewHolder(h: VH, position: Int) {
         val d = items[position]
         h.name.text = d.displayName()
-        h.detalle.text = "IP: ${d.ip}\nMAC: ${d.mac}\nOrigen: ${d.vendor}"
+        // Si tiene apodo, mostramos también el nombre real que da el router para no perderlo de vista.
+        val realName = if (d.alias.isNotBlank() && d.name.isNotBlank()) "\nNombre en red: ${d.name}" else ""
+        h.detalle.text = "IP: ${d.ip}\nMAC: ${d.mac}\nOrigen: ${d.vendor}$realName"
 
         if (d.blocked) {
             h.estado.text = "Bloqueado"
@@ -52,5 +56,6 @@ class DeviceAdapter(
 
         h.btnBlock.setOnClickListener { onBlock(d) }
         h.btnSchedule.setOnClickListener { onSchedule(d) }
+        h.btnRename.setOnClickListener { onRename(d) }
     }
 }
