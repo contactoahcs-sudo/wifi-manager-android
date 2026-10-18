@@ -38,7 +38,7 @@ class DeviceAdapter(
     override fun onBindViewHolder(h: VH, position: Int) {
         val d = items[position]
         h.name.text = d.displayName()
-        h.detalle.text = "IP: ${d.ip}\nMAC: ${d.mac}\nFabricante: ${d.vendor}"
+        h.detalle.text = "IP: ${d.ip}\nMAC: ${d.mac}\nOrigen: ${d.vendor}"
 
         if (d.blocked) {
             h.estado.text = "Bloqueado"

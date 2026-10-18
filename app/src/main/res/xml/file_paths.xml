@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="descargas" path="." />
+    <external-cache-path name="descargas_ext" path="." />
+</paths>

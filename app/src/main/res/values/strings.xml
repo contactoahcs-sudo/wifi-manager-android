@@ -25,4 +25,14 @@
     <string name="horario_ayuda">Franja: dias|inicio|fin. Días 0=Lun..6=Dom. Ej: 01234|22:00|06:00 (Lun-Vie de 22:00 a 06:00). Varias separadas por ; </string>
     <string name="horario_guardado">Horario guardado</string>
     <string name="horario_quitado">Horario quitado</string>
+    <string name="buscar_actualizacion">Buscar actualización</string>
+    <string name="buscando_update">Buscando actualización…</string>
+    <string name="hay_actualizacion">Actualización disponible</string>
+    <string name="descargar_instalar_v">Hay una versión nueva (v%d). ¿Descargar e instalar ahora?</string>
+    <string name="actualizar_ya">Actualizar ahora</string>
+    <string name="ahora_no">Ahora no</string>
+    <string name="descargando_update">Descargando actualización…</string>
+    <string name="error_descarga">No se pudo descargar la actualización.</string>
+    <string name="permiso_instalar">Permiso para instalar</string>
+    <string name="permiso_instalar_msg">Para actualizar, Android te pedirá permitir que esta app instale actualizaciones. Actívalo y vuelve a intentar.</string>
 </resources>

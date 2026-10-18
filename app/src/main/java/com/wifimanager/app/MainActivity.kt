@@ -1,5 +1,8 @@
 package com.wifimanager.app
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.Menu
@@ -7,6 +10,7 @@ import android.view.MenuItem
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -15,6 +19,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
@@ -26,6 +31,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         setSupportActionBar(findViewById(R.id.toolbar))
+
+        Vendors.init(applicationContext)   // carga la base de fabricantes
 
         status = findViewById(R.id.status)
         val list = findViewById<RecyclerView>(R.id.list)
@@ -41,11 +48,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menu.add(0, 1, 0, getString(R.string.config_router))
+        menu.add(0, 2, 1, getString(R.string.buscar_actualizacion))
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == 1) { showConfigDialog(); return true }
+        when (item.itemId) {
+            1 -> { showConfigDialog(); return true }
+            2 -> { checkUpdate(); return true }
+        }
         return super.onOptionsItemSelected(item)
     }
 
@@ -159,5 +170,63 @@ class MainActivity : AppCompatActivity() {
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "horarios", ExistingPeriodicWorkPolicy.UPDATE, work
         )
+    }
+
+    // ---- actualización de la app ----
+    private fun checkUpdate() {
+        status.text = getString(R.string.buscando_update)
+        lifecycleScope.launch {
+            val r = withContext(Dispatchers.IO) {
+                try { Updater.check() } catch (e: Exception) { Updater.Result(false, 0, e.message ?: "error") }
+            }
+            status.text = r.nota
+            if (r.hayNueva) {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(R.string.hay_actualizacion)
+                    .setMessage(getString(R.string.descargar_instalar_v, r.versionRemota))
+                    .setPositiveButton(R.string.actualizar_ya) { _, _ -> downloadAndInstall() }
+                    .setNegativeButton(R.string.ahora_no, null)
+                    .show()
+            } else {
+                Toast.makeText(this@MainActivity, r.nota, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun downloadAndInstall() {
+        status.text = getString(R.string.descargando_update)
+        lifecycleScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                try { Result.success(Updater.download(this@MainActivity)) }
+                catch (e: Exception) { Result.failure(e) }
+            }
+            res.onSuccess { file -> installApk(file) }
+                .onFailure { e ->
+                    status.text = e.message ?: getString(R.string.error_generico)
+                    Toast.makeText(this@MainActivity, R.string.error_descarga, Toast.LENGTH_LONG).show()
+                }
+        }
+    }
+
+    private fun installApk(file: File) {
+        // En Android 8+ el usuario debe permitir "instalar apps de esta fuente" la 1a vez.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.permiso_instalar)
+                .setMessage(R.string.permiso_instalar_msg)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName")))
+                }
+                .setNegativeButton(R.string.cancelar, null)
+                .show()
+            return
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(intent)
     }
 }
