@@ -11,13 +11,29 @@ android {
         applicationId = "com.wifimanager.app"
         minSdk = 21
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
+    }
+
+    // Llave de firma fija (incluida en el repo) para que TODAS las versiones
+    // queden firmadas igual y se puedan actualizar una encima de otra sin el
+    // error "conflicto con un paquete". Es una llave propia de esta app.
+    signingConfigs {
+        create("fija") {
+            storeFile = file("wifimanager.keystore")
+            storePassword = "wifimanager"
+            keyAlias = "wifimanager"
+            keyPassword = "wifimanager"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("fija")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("fija")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
