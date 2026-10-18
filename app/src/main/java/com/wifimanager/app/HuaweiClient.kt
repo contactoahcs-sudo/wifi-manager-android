@@ -108,30 +108,37 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
             loggedIn = false; ensure()
             body = get("/html/bbsp/common/GetLanUserDevInfo.asp")
         }
-        lastDebug = lastDebug + "\n--- GetLanUserDevInfo ---\n" + body.take(2000)
+        lastDebug = lastDebug + "\n--- GetLanUserDevInfo (final) ---\n" + body.takeLast(2500)
         return parse(body)
     }
 
     companion object {
-        // new USERDevice("Domain","IpAddr","MacAddr","Port","PortID","DevStatus","PortType","Time","HostName",...)
-        private val ENTRY = Regex("""new\s+USERDevice\s*\((.*?)\)\s*[,)]""", RegexOption.DOT_MATCHES_ALL)
+        // Este firmware (Totalplay) usa USERDeviceNew(Domain, IpAddr, MacAddr, Port, IpType,
+        // DevType, DevStatus, PortType, Time, HostName, IPv4Enabled, IPv6Enabled, DeviceType,
+        // UserDevAlias, UserSpecifiedDeviceType, LeaseTimeRemaining, RealMacAddr).
+        // Otros usan USERDevice(...) con el mismo orden en los primeros 16 campos.
+        private val ENTRY = Regex("""new\s+USERDevice(?:New)?\s*\((.*?)\)\s*[,)]""", RegexOption.DOT_MATCHES_ALL)
         private val MAC = Regex("""([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})""")
         private val IPV4 = Regex("""\b(\d{1,3}(?:\.\d{1,3}){3})\b""")
+
+        private fun clean(v: String?): String {
+            val t = v?.trim()?.trim('"', '\'')?.trim() ?: ""
+            return if (t == "--" || t == "-") "" else t
+        }
 
         fun parse(body: String): List<Device> {
             val out = ArrayList<Device>()
             for (m in ENTRY.findAll(body)) {
-                val fields = m.groupValues[1].split(",").map { it.trim().trim('"') }
-                val mac = fields.firstOrNull { MAC.matches(it) }?.uppercase() ?: continue
-                val ip = fields.firstOrNull { IPV4.matches(it) } ?: ""
-                val online = fields.any { it.equals("Online", true) }
-                // El nombre suele ser el 9no campo; si no, tomamos el primero "con letras" que no sea dominio/estado.
-                val name = fields.getOrNull(8)?.takeIf { it.isNotBlank() && it != "-" }
-                    ?: fields.drop(3).firstOrNull {
-                        it.isNotBlank() && !MAC.matches(it) && !IPV4.matches(it) &&
-                            !it.equals("Online", true) && !it.equals("Offline", true) &&
-                            it.any { c -> c.isLetter() }
-                    } ?: ""
+                val f = m.groupValues[1].split(",")
+                // Saltamos la definición de la función (sus "campos" no son datos).
+                if (f.size < 10 || f.any { it.contains("function", true) }) continue
+                val mac = clean(f.getOrNull(2)).uppercase()
+                if (!MAC.matches(mac)) continue
+                val ip = clean(f.getOrNull(1)).takeIf { IPV4.matches(it) } ?: ""
+                val online = clean(f.getOrNull(6)).equals("Online", true)
+                val host = clean(f.getOrNull(9))
+                val aliasRouter = clean(f.getOrNull(13))
+                val name = aliasRouter.ifBlank { host }
                 out.add(Device(
                     mac = mac, ip = ip, name = name,
                     vendor = Vendors.lookup(mac),
