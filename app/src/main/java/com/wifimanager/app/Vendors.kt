@@ -1,12 +1,11 @@
 package com.wifimanager.app
 
 import android.content.Context
-import java.util.zip.GZIPInputStream
 
 /**
  * Fabricante / origen del dispositivo a partir de la MAC (OUI = primeros 3 bytes).
  *
- * Carga la base COMPLETA del IEEE (~35 mil fabricantes) desde assets/oui.gz,
+ * Carga la base COMPLETA del IEEE (~35 mil fabricantes) desde assets/oui.txt,
  * así casi ningún equipo queda como "Desconocido". Detecta además las MAC
  * aleatorias que usan los teléfonos modernos por privacidad.
  */
@@ -21,13 +20,11 @@ object Vendors {
     fun init(ctx: Context) {
         if (loaded) return
         try {
-            ctx.assets.open("oui.gz").use { ins ->
-                GZIPInputStream(ins).bufferedReader(Charsets.UTF_8).useLines { lines ->
-                    lines.forEach { line ->
-                        val i = line.indexOf('\t')
-                        if (i == 6) {
-                            table[line.substring(0, 6)] = line.substring(i + 1)
-                        }
+            ctx.assets.open("oui.txt").bufferedReader(Charsets.UTF_8).useLines { lines ->
+                lines.forEach { line ->
+                    val i = line.indexOf('\t')
+                    if (i == 6) {
+                        table[line.substring(0, 6)] = line.substring(i + 1)
                     }
                 }
             }
