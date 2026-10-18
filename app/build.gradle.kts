@@ -11,8 +11,8 @@ android {
         applicationId = "com.wifimanager.app"
         minSdk = 21
         targetSdk = 34
-        versionCode = 9
-        versionName = "1.8"
+        versionCode = 10
+        versionName = "1.9"
     }
 
     // Llave de firma fija (incluida en el repo) para que TODAS las versiones

@@ -14,13 +14,85 @@
         android:title="@string/app_name"
         app:titleTextColor="#E6EDF3" />
 
-    <TextView
-        android:id="@+id/status"
+    <LinearLayout
+        android:id="@+id/summary"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="12dp"
-        android:textColor="#8B97A7"
-        android:text="@string/pulsa_actualizar" />
+        android:orientation="vertical"
+        android:background="#161B22"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp">
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#E6EDF3"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:text="@string/pulsa_actualizar" />
+
+        <TextView
+            android:id="@+id/subStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#8B97A7"
+            android:textSize="12sp"
+            android:layout_marginTop="2dp" />
+    </LinearLayout>
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingHorizontal="10dp">
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chips"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:singleSelection="true"
+            app:selectionRequired="true"
+            app:singleLine="true">
+
+            <com.google.android.material.chip.Chip android:id="@+id/c_todos" style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_todos" android:checked="true" />
+            <com.google.android.material.chip.Chip android:id="@+id/c_conectados" style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_conectados" />
+            <com.google.android.material.chip.Chip android:id="@+id/c_bloqueados" style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_bloqueados" />
+            <com.google.android.material.chip.Chip android:id="@+id/c_desconectados" style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_desconectados" />
+            <com.google.android.material.chip.Chip android:id="@+id/c_totalplay" style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_totalplay" />
+            <com.google.android.material.chip.Chip android:id="@+id/c_xiaomi" style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_xiaomi" />
+            <com.google.android.material.chip.Chip android:id="@+id/c_ocultos" style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_ocultos" />
+        </com.google.android.material.chip.ChipGroup>
+    </HorizontalScrollView>
+
+    <LinearLayout
+        android:id="@+id/selBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#1F2937"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="4dp"
+        android:visibility="gone">
+
+        <Button android:id="@+id/btnSelOffline" style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:textSize="12sp" android:text="@string/sel_desconectados" />
+        <Button android:id="@+id/btnHideSel" style="?attr/materialButtonStyle"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="6dp" android:textSize="12sp" android:text="@string/ocultar_sel" />
+        <Button android:id="@+id/btnCancelSel" style="?attr/borderlessButtonStyle"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="2dp" android:textSize="12sp" android:text="@string/cancelar" />
+    </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/list"

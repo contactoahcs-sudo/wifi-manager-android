@@ -184,5 +184,50 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
         }
     }
 
+    private val MACFILTER_PAGES = listOf(
+        "/html/bbsp/wlanmacfilter/wlanmacfilter.asp",
+        "/html/bbsp/macfilter/macfilter.asp",
+        "/html/amp/wlanmacfilter/wlanmacfilter.asp",
+        "/html/bbsp/wlanaccesscontrol/wlanaccesscontrol.asp"
+    )
+    private val WLAN_PAGES = listOf(
+        "/html/amp/wlanbasic/wlanbasic.asp",
+        "/html/bbsp/wlanbasic/wlanbasic.asp",
+        "/html/amp/wlanbasic/wlanbasic5g.asp"
+    )
+
+    /** MACs que el módem tiene en filtro/lista negra (lectura; mejor esfuerzo). */
+    fun blockedMacs(): Set<String> {
+        ensure()
+        val out = HashSet<String>()
+        for (p in MACFILTER_PAGES) {
+            val body = try { get(p) } catch (_: Exception) { "" }
+            if (body.length < 200 || body.contains("login.cgi") || body.contains("<title>Login")) continue
+            // Solo entradas de datos (new stXxx(...)), no HTML.
+            for (m in ENTRY.findAll(body)) {
+                if (m.groupValues[1].equals("Array", true)) continue
+                for (raw in m.groupValues[2].split(",")) {
+                    val v = clean(raw).uppercase()
+                    if (MAC.matches(v)) out.add(v)
+                }
+            }
+            if (out.isNotEmpty()) break
+        }
+        return out
+    }
+
+    /** Captura las páginas de filtro MAC y WiFi para poder implementar bloqueo/invitados. */
+    fun capturePages(): String {
+        ensure()
+        val sb = StringBuilder()
+        for (p in MACFILTER_PAGES + WLAN_PAGES) {
+            val body = try { get(p) } catch (e: Exception) { "ERR ${e.message}" }
+            sb.append("=== ").append(p).append(" (").append(body.length).append(")\n")
+            val i = body.indexOf("new Array(")
+            sb.append(if (i >= 0) body.substring(i, minOf(body.length, i + 700)) else body.take(300)).append("\n\n")
+        }
+        return sb.toString()
+    }
+
     fun test(): Boolean { login(); return loggedIn }
 }

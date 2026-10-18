@@ -180,6 +180,67 @@ class MiWifiClient(ip: String, private val password: String) {
         return changed
     }
 
+    private fun api(path: String): JSONObject {
+        ensureToken()
+        var j = getJson("/cgi-bin/luci/;stok=$token/api/$path")
+        if (j.optInt("code", -1) != 0 && j.optInt("code", -1) == 401) {
+            token = null; ensureToken()
+            j = getJson("/cgi-bin/luci/;stok=$token/api/$path")
+        }
+        return j
+    }
+
+    /** MACs en la lista negra del router (bloqueados aunque ya no aparezcan conectados). */
+    fun blockedMacs(): Set<String> {
+        val out = HashSet<String>()
+        for (p in listOf("xqnetwork/macfilter_info", "xqnetwork/wifi_macfilter_info")) {
+            try {
+                val j = api(p)
+                if (j.optInt("code", -1) != 0) continue
+                val arr = j.optJSONArray("list") ?: j.optJSONArray("macfilter") ?: continue
+                for (i in 0 until arr.length()) {
+                    val m = arr.optJSONObject(i)?.optString("mac", "")?.uppercase() ?: ""
+                    if (m.length == 17) out.add(m)
+                }
+                if (out.isNotEmpty()) break
+            } catch (_: Exception) {}
+        }
+        return out
+    }
+
+    /** Info de la red de invitados (wifiIndex 3) si el router la expone. */
+    fun guestInfo(): JSONObject? {
+        val info = wifiDetail()
+        for (i in 0 until info.length()) {
+            val b = info.getJSONObject(i)
+            if (b.optInt("wifiIndex", -1) == 3) return b
+        }
+        return null
+    }
+
+    /** Crea/activa (on=true) o apaga la red de invitados. Devuelve la respuesta cruda. */
+    fun setGuest(on: Boolean, ssid: String, password: String): JSONObject {
+        val cur = try { guestInfo() } catch (_: Exception) { null }
+        val enc = if (password.isEmpty()) "none" else (cur?.optString("encryption", "psk2")?.ifEmpty { "psk2" } ?: "psk2")
+        val params = "wifiIndex=3&on=${if (on) 1 else 0}&ssid=${enc(ssid)}&encryption=$enc&password=${enc(password)}"
+        return api("xqnetwork/set_wifi_without_restart?$params")
+    }
+
+    fun reboot(): JSONObject = api("xqsystem/reboot")
+
+    /** Estado WAN (IP pública, etc.) como texto legible. */
+    fun wanInfoText(): String {
+        val j = api("xqnetwork/wan_info")
+        val info = j.optJSONObject("info") ?: return "Sin datos de WAN"
+        val ipv4 = info.optJSONArray("ipv4")?.optJSONObject(0)
+        val sb = StringBuilder()
+        sb.append("Enlace: ").append(info.optString("link", "?")).append("\n")
+        sb.append("Tipo: ").append(info.optJSONObject("details")?.optString("wanType", info.optString("wanType", "?")) ?: "?").append("\n")
+        if (ipv4 != null) sb.append("IP WAN: ").append(ipv4.optString("ip", "?")).append("\n")
+        sb.append("Uptime: ").append(info.optString("uptime", "?"))
+        return sb.toString()
+    }
+
     /** Prueba conexión + contraseña sin bloquear nada. */
     fun test(): Boolean {
         login()

@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.text.InputType
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -15,6 +16,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.work.*
+import com.google.android.material.chip.ChipGroup
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,7 +27,17 @@ import java.util.concurrent.TimeUnit
 class MainActivity : AppCompatActivity() {
 
     private lateinit var status: TextView
+    private lateinit var subStatus: TextView
+    private lateinit var selBar: View
+    private lateinit var btnHideSel: Button
+    private lateinit var chips: ChipGroup
     private lateinit var adapter: DeviceAdapter
+
+    /** Todos los equipos leídos (antes de filtrar/ocultar). */
+    private var all: List<Device> = emptyList()
+    private var lastErrors: List<String> = emptyList()
+    private var countHw = 0
+    private var countXi = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,12 +47,38 @@ class MainActivity : AppCompatActivity() {
         Vendors.init(applicationContext)   // carga la base de fabricantes
 
         status = findViewById(R.id.status)
+        subStatus = findViewById(R.id.subStatus)
+        selBar = findViewById(R.id.selBar)
+        btnHideSel = findViewById(R.id.btnHideSel)
+        chips = findViewById(R.id.chips)
         val list = findViewById<RecyclerView>(R.id.list)
         list.layoutManager = LinearLayoutManager(this)
-        adapter = DeviceAdapter(emptyList(), ::onBlockToggle, ::onSchedule, ::onRename)
+        adapter = DeviceAdapter(emptyList(), ::onBlockToggle, ::onSchedule, ::onRename, ::onSelectionChanged)
         list.adapter = adapter
 
         findViewById<FloatingActionButton>(R.id.refresh).setOnClickListener { refresh() }
+
+        // Filtros
+        val chipByFilter = mapOf(
+            "todos" to R.id.c_todos, "conectados" to R.id.c_conectados, "bloqueados" to R.id.c_bloqueados,
+            "desconectados" to R.id.c_desconectados, "totalplay" to R.id.c_totalplay,
+            "xiaomi" to R.id.c_xiaomi, "ocultos" to R.id.c_ocultos
+        )
+        chips.check(chipByFilter[Prefs.getFilter(this)] ?: R.id.c_todos)
+        chips.setOnCheckedStateChangeListener { _, ids ->
+            val id = ids.firstOrNull() ?: return@setOnCheckedStateChangeListener
+            val f = chipByFilter.entries.firstOrNull { it.value == id }?.key ?: "todos"
+            Prefs.setFilter(this, f)
+            if (adapter.selecting) adapter.setSelecting(false)
+            render()
+        }
+
+        // Barra de selección múltiple
+        findViewById<Button>(R.id.btnSelOffline).setOnClickListener {
+            adapter.selectWhere { !it.online && !it.blocked }
+        }
+        btnHideSel.setOnClickListener { applySelection() }
+        findViewById<Button>(R.id.btnCancelSel).setOnClickListener { adapter.setSelecting(false) }
 
         if (!Prefs.isConfigured(this)) showConfigDialog() else refresh()
         scheduleWorker()
@@ -51,8 +89,10 @@ class MainActivity : AppCompatActivity() {
         menu.add(0, 3, 1, getString(R.string.denegar_mac_aleatoria)).isCheckable = true
         menu.add(0, 5, 2, getString(R.string.config_huawei))
         menu.add(0, 4, 3, getString(R.string.cambiar_pass_wifi))
-        menu.add(0, 6, 4, getString(R.string.diagnostico_huawei))
-        menu.add(0, 2, 5, getString(R.string.buscar_actualizacion))
+        menu.add(0, 7, 4, getString(R.string.seleccionar))
+        menu.add(0, 8, 5, getString(R.string.herramientas))
+        menu.add(0, 6, 6, getString(R.string.diagnostico_huawei))
+        menu.add(0, 2, 7, getString(R.string.buscar_actualizacion))
         return true
     }
 
@@ -69,6 +109,8 @@ class MainActivity : AppCompatActivity() {
             4 -> { showChangeWifiPassword(); return true }
             5 -> { showHuaweiDialog(); return true }
             6 -> { runHuaweiDiagnostic(); return true }
+            7 -> { adapter.setSelecting(!adapter.selecting); return true }
+            8 -> { showTools(); return true }
         }
         return super.onOptionsItemSelected(item)
     }
@@ -141,33 +183,203 @@ class MainActivity : AppCompatActivity() {
         if (!Prefs.isConfigured(this)) { showConfigDialog(); return }
         status.text = getString(R.string.cargando)
         lifecycleScope.launch {
-            // Leemos los dos equipos (si están configurados) y unimos las listas por MAC.
             val ctx = this@MainActivity
-            val (xiaomi, hw, errores) = withContext(Dispatchers.IO) {
+            data class Leido(val xiaomi: List<Device>, val hw: List<Device>,
+                             val blockedXi: Set<String>, val blockedHw: Set<String>, val errs: List<String>)
+            val r = withContext(Dispatchers.IO) {
                 val errs = ArrayList<String>()
-                val x = if (Prefs.isXiaomiConfigured(ctx)) try {
-                    MiWifiClient(Prefs.getIp(ctx), Prefs.getPassword(ctx)).deviceList()
-                } catch (e: Exception) { errs.add("Xiaomi: ${e.message}"); emptyList() } else emptyList()
-                val h = if (Prefs.isHuaweiConfigured(ctx)) try {
-                    HuaweiClient(Prefs.getHwIp(ctx), Prefs.getHwUser(ctx), Prefs.getHwPassword(ctx)).deviceList()
-                } catch (e: Exception) { errs.add("Totalplay: ${e.message}"); emptyList() } else emptyList()
-                Triple(x, h, errs)
+                var x: List<Device> = emptyList(); var bx: Set<String> = emptySet()
+                if (Prefs.isXiaomiConfigured(ctx)) try {
+                    val c = MiWifiClient(Prefs.getIp(ctx), Prefs.getPassword(ctx))
+                    x = c.deviceList()
+                    bx = try { c.blockedMacs() } catch (_: Exception) { emptySet() }
+                } catch (e: Exception) { errs.add("Xiaomi: ${e.message}") }
+                var h: List<Device> = emptyList(); var bh: Set<String> = emptySet()
+                if (Prefs.isHuaweiConfigured(ctx)) try {
+                    val c = HuaweiClient(Prefs.getHwIp(ctx), Prefs.getHwUser(ctx), Prefs.getHwPassword(ctx))
+                    h = c.deviceList()
+                    bh = try { c.blockedMacs() } catch (_: Exception) { emptySet() }
+                } catch (e: Exception) { errs.add("Totalplay: ${e.message}") }
+                Leido(x, h, bx, bh, errs)
             }
-            // Si un equipo está en los dos (p. ej. el propio Xiaomi), nos quedamos con la entrada
-            // del Xiaomi porque esa sí se puede bloquear.
+            // Unimos por MAC. Si está en los dos, gana el Xiaomi (ese sí se puede bloquear).
             val porMac = LinkedHashMap<String, Device>()
-            for (d in hw) porMac[d.mac] = d
-            for (d in xiaomi) porMac[d.mac] = d
-            val lista = porMac.values
-                .map { it.copy(alias = Prefs.getAlias(ctx, it.mac)) }
-                .sortedWith(compareByDescending<Device> { it.online }.thenBy { it.displayName().lowercase() })
-            adapter.update(lista)
-            status.text = if (errores.isNotEmpty() && lista.isEmpty())
-                errores.joinToString("\n")
-            else
-                getString(R.string.equipos_resumen, lista.size, hw.size, xiaomi.size) +
-                    (if (errores.isNotEmpty()) "\n" + errores.joinToString("\n") else "")
-            if (Prefs.isAutoBlockRandom(ctx)) enforceRandomBlock(lista)
+            for (d in r.hw) porMac[d.mac] = d.copy(blocked = d.blocked || r.blockedHw.contains(d.mac))
+            for (d in r.xiaomi) porMac[d.mac] = d.copy(blocked = d.blocked || r.blockedXi.contains(d.mac))
+            // Bloqueados que ya no aparecen en la lista: los mostramos para poder "Permitir".
+            for (m in r.blockedXi) if (!porMac.containsKey(m))
+                porMac[m] = Device(m, "", "", Vendors.lookup(m), online = false, blocked = true, source = "Xiaomi", canBlock = true)
+            for (m in r.blockedHw) if (!porMac.containsKey(m))
+                porMac[m] = Device(m, "", "", Vendors.lookup(m), online = false, blocked = true, source = "Totalplay (Huawei)", canBlock = false)
+            all = porMac.values.map { it.copy(alias = Prefs.getAlias(ctx, it.mac)) }
+            countHw = r.hw.size; countXi = r.xiaomi.size; lastErrors = r.errs
+            render()
+            if (Prefs.isAutoBlockRandom(ctx)) enforceRandomBlock(all)
+        }
+    }
+
+    /** Aplica filtro + ocultos y pinta la lista y el resumen. */
+    private fun render() {
+        val hidden = Prefs.hiddenMacs(this)
+        val f = Prefs.getFilter(this)
+        val visibles = if (f == "ocultos") all.filter { hidden.contains(it.mac) } else all.filter { !hidden.contains(it.mac) }
+        val lista = when (f) {
+            "conectados" -> visibles.filter { it.online && !it.blocked }
+            "bloqueados" -> visibles.filter { it.blocked }
+            "desconectados" -> visibles.filter { !it.online && !it.blocked }
+            "totalplay" -> visibles.filter { it.source.startsWith("Totalplay") }
+            "xiaomi" -> visibles.filter { it.source == "Xiaomi" }
+            else -> visibles
+        }.sortedWith(compareByDescending<Device> { it.online && !it.blocked }
+            .thenByDescending { it.blocked }.thenBy { it.displayName().lowercase() })
+        adapter.update(lista)
+
+        val online = all.count { it.online && !it.blocked }
+        val bloq = all.count { it.blocked }
+        val off = all.count { !it.online && !it.blocked }
+        status.text = getString(R.string.resumen_hdr, online, bloq, off)
+        subStatus.text = buildString {
+            append("Totalplay ").append(countHw).append(" · Xiaomi ").append(countXi)
+            if (hidden.isNotEmpty()) append(" · ocultos ").append(hidden.size)
+            append(" · mostrando ").append(lista.size)
+            if (lastErrors.isNotEmpty()) append("\n").append(lastErrors.joinToString("\n"))
+        }
+        btnHideSel.text = if (f == "ocultos") getString(R.string.mostrar_sel, adapter.selected.size)
+                          else getString(R.string.ocultar_sel, adapter.selected.size)
+    }
+
+    private fun onSelectionChanged() {
+        selBar.visibility = if (adapter.selecting) View.VISIBLE else View.GONE
+        val f = Prefs.getFilter(this)
+        btnHideSel.text = if (f == "ocultos") getString(R.string.mostrar_sel, adapter.selected.size)
+                          else getString(R.string.ocultar_sel, adapter.selected.size)
+    }
+
+    /** Oculta (o, en la vista "Ocultos", vuelve a mostrar) los seleccionados. */
+    private fun applySelection() {
+        val sel = adapter.selected.toSet()
+        if (sel.isEmpty()) { toast(getString(R.string.sel_ninguno)); return }
+        val hidden = Prefs.hiddenMacs(this)
+        if (Prefs.getFilter(this) == "ocultos") {
+            hidden.removeAll(sel); Prefs.setHiddenMacs(this, hidden)
+            toast(getString(R.string.restaurados, sel.size))
+        } else {
+            hidden.addAll(sel); Prefs.setHiddenMacs(this, hidden)
+            toast(getString(R.string.ocultados, sel.size))
+        }
+        adapter.setSelecting(false)
+        render()
+    }
+
+    // ---- herramientas ----
+    private fun showTools() {
+        val items = arrayOf(
+            getString(R.string.red_invitados),
+            getString(R.string.estado_red),
+            getString(R.string.reiniciar_xiaomi),
+            getString(R.string.cambiar_pass_wifi),
+            getString(R.string.diag_avanzado)
+        )
+        AlertDialog.Builder(this).setTitle(R.string.herramientas)
+            .setItems(items) { _, i ->
+                when (i) {
+                    0 -> showGuestDialog()
+                    1 -> showNetworkStatus()
+                    2 -> confirmReboot()
+                    3 -> showChangeWifiPassword()
+                    4 -> runHuaweiAdvancedDiagnostic()
+                }
+            }.setNegativeButton(R.string.cancelar, null).show()
+    }
+
+    private fun showGuestDialog() {
+        if (!Prefs.isXiaomiConfigured(this)) { showConfigDialog(); return }
+        val view = layoutInflater.inflate(R.layout.dialog_guest, null)
+        val ssid = view.findViewById<EditText>(R.id.g_ssid)
+        val pass = view.findViewById<EditText>(R.id.g_pass)
+        lifecycleScope.launch {
+            val cur = withContext(Dispatchers.IO) {
+                try { MiWifiClient(Prefs.getIp(this@MainActivity), Prefs.getPassword(this@MainActivity)).guestInfo() } catch (_: Exception) { null }
+            }
+            ssid.setText(cur?.optString("ssid", "") ?: "Invitados")
+            if (ssid.text.isNullOrBlank()) ssid.setText("Invitados")
+            pass.setText(cur?.optString("password", "") ?: "")
+        }
+        AlertDialog.Builder(this).setTitle(R.string.red_invitados).setView(view)
+            .setPositiveButton(R.string.inv_activar) { _, _ ->
+                val sV = ssid.text.toString().trim(); val pV = pass.text.toString()
+                when {
+                    sV.isEmpty() -> toast(getString(R.string.inv_nombre))
+                    pV.isNotEmpty() && pV.length < 8 -> toast(getString(R.string.pass_corta))
+                    else -> applyGuest(true, sV, pV)
+                }
+            }
+            .setNeutralButton(R.string.inv_apagar) { _, _ -> applyGuest(false, ssid.text.toString().trim().ifEmpty { "Invitados" }, pass.text.toString()) }
+            .setNegativeButton(R.string.cancelar, null)
+            .setMessage(getString(R.string.inv_huawei_nota))
+            .show()
+    }
+
+    private fun applyGuest(on: Boolean, ssid: String, pass: String) {
+        status.text = getString(R.string.probando)
+        lifecycleScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                try { Result.success(MiWifiClient(Prefs.getIp(this@MainActivity), Prefs.getPassword(this@MainActivity)).setGuest(on, ssid, pass)) }
+                catch (e: Exception) { Result.failure(e) }
+            }
+            res.onSuccess { j ->
+                if (j.optInt("code", -1) == 0) toast(getString(R.string.inv_ok))
+                else AlertDialog.Builder(this@MainActivity).setTitle(R.string.red_invitados)
+                    .setMessage(getString(R.string.inv_error, j.toString())).setPositiveButton(android.R.string.ok, null).show()
+            }.onFailure { e -> toast(getString(R.string.inv_error, e.message ?: "")) }
+            render()
+        }
+    }
+
+    private fun showNetworkStatus() {
+        lifecycleScope.launch {
+            val txt = withContext(Dispatchers.IO) {
+                val sb = StringBuilder()
+                if (Prefs.isXiaomiConfigured(this@MainActivity)) {
+                    sb.append("— Xiaomi —\n")
+                    sb.append(try { MiWifiClient(Prefs.getIp(this@MainActivity), Prefs.getPassword(this@MainActivity)).wanInfoText() } catch (e: Exception) { "Error: ${e.message}" })
+                    sb.append("\n\n")
+                }
+                sb.append("— Equipos —\n")
+                sb.append("En línea: ").append(all.count { it.online && !it.blocked }).append("\n")
+                sb.append("Sin internet: ").append(all.count { it.blocked }).append("\n")
+                sb.append("Desconectados: ").append(all.count { !it.online && !it.blocked }).append("\n")
+                sb.append("MAC aleatoria: ").append(all.count { Vendors.isRandom(it.mac) }).append("\n")
+                sb.toString()
+            }
+            AlertDialog.Builder(this@MainActivity).setTitle(R.string.estado_red).setMessage(txt)
+                .setPositiveButton(android.R.string.ok, null).show()
+        }
+    }
+
+    private fun confirmReboot() {
+        if (!Prefs.isXiaomiConfigured(this)) { showConfigDialog(); return }
+        AlertDialog.Builder(this).setTitle(R.string.reiniciar_xiaomi).setMessage(R.string.reiniciar_confirma)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                status.text = getString(R.string.reiniciando)
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) { try { MiWifiClient(Prefs.getIp(this@MainActivity), Prefs.getPassword(this@MainActivity)).reboot() } catch (_: Exception) {} }
+                    toast(getString(R.string.hecho))
+                }
+            }.setNegativeButton(R.string.cancelar, null).show()
+    }
+
+    private fun runHuaweiAdvancedDiagnostic() {
+        if (!Prefs.isHuaweiConfigured(this)) { showHuaweiDialog(); return }
+        status.text = getString(R.string.probando)
+        lifecycleScope.launch {
+            val txt = withContext(Dispatchers.IO) {
+                try { HuaweiClient(Prefs.getHwIp(this@MainActivity), Prefs.getHwUser(this@MainActivity), Prefs.getHwPassword(this@MainActivity)).capturePages() }
+                catch (e: Exception) { "ERROR: ${e.message}" }
+            }
+            render()
+            AlertDialog.Builder(this@MainActivity).setTitle(R.string.diag_avanzado).setMessage(txt.take(6000))
+                .setPositiveButton(android.R.string.ok, null).show()
         }
     }
 

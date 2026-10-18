@@ -45,6 +45,15 @@ object Prefs {
         sp(c).edit().putBoolean("auto_block_random", value).apply()
     }
 
+    // Equipos ocultos de la lista (por MAC).
+    fun hiddenMacs(c: Context): MutableSet<String> =
+        HashSet(sp(c).getStringSet("hidden_macs", emptySet()) ?: emptySet())
+    fun setHiddenMacs(c: Context, macs: Set<String>) {
+        sp(c).edit().putStringSet("hidden_macs", HashSet(macs)).apply()
+    }
+    fun getFilter(c: Context): String = sp(c).getString("filter", "todos") ?: "todos"
+    fun setFilter(c: Context, f: String) { sp(c).edit().putString("filter", f).apply() }
+
     // Apodo / nombre interno por equipo. Se guarda permanentemente (SharedPreferences),
     // sobrevive al cerrar y reabrir la app. Útil para equipos con MAC aleatoria.
     fun getAlias(c: Context, mac: String): String = sp(c).getString("alias_$mac", "") ?: ""
