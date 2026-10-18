@@ -17,7 +17,7 @@ import java.util.Calendar
 class ScheduleWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        if (!Prefs.isConfigured(applicationContext)) return@withContext Result.success()
+        if (!Prefs.isXiaomiConfigured(applicationContext)) return@withContext Result.success()
         val client = MiWifiClient(
             Prefs.getIp(applicationContext),
             Prefs.getPassword(applicationContext)

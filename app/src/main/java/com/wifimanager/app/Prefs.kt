@@ -12,7 +12,19 @@ object Prefs {
 
     fun getIp(c: Context): String = sp(c).getString("ip", "192.168.31.1") ?: "192.168.31.1"
     fun getPassword(c: Context): String = sp(c).getString("password", "") ?: ""
-    fun isConfigured(c: Context): Boolean = getPassword(c).isNotEmpty()
+    fun isXiaomiConfigured(c: Context): Boolean = getPassword(c).isNotEmpty()
+
+    // Módem principal Huawei (Totalplay). Panel normalmente 192.168.100.1, usuario root.
+    fun getHwIp(c: Context): String = sp(c).getString("hw_ip", "192.168.100.1") ?: "192.168.100.1"
+    fun getHwUser(c: Context): String = sp(c).getString("hw_user", "root") ?: "root"
+    fun getHwPassword(c: Context): String = sp(c).getString("hw_pass", "") ?: ""
+    fun isHuaweiConfigured(c: Context): Boolean = getHwPassword(c).isNotEmpty()
+    fun saveHuawei(c: Context, ip: String, user: String, pass: String) {
+        sp(c).edit().putString("hw_ip", ip).putString("hw_user", user).putString("hw_pass", pass).apply()
+    }
+
+    /** Hay al menos un equipo configurado (Xiaomi o Huawei). */
+    fun isConfigured(c: Context): Boolean = isXiaomiConfigured(c) || isHuaweiConfigured(c)
 
     fun save(c: Context, ip: String, password: String) {
         sp(c).edit().putString("ip", ip).putString("password", password).apply()

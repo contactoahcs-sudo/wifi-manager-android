@@ -42,7 +42,10 @@ class DeviceAdapter(
         h.name.text = d.displayName()
         // Si tiene apodo, mostramos también el nombre real que da el router para no perderlo de vista.
         val realName = if (d.alias.isNotBlank() && d.name.isNotBlank()) "\nNombre en red: ${d.name}" else ""
-        h.detalle.text = "IP: ${d.ip}\nMAC: ${d.mac}\nOrigen: ${d.vendor}$realName"
+        h.detalle.text = "IP: ${d.ip}\nMAC: ${d.mac}\nOrigen: ${d.vendor}\nRed: ${d.source}$realName"
+        val vis = if (d.canBlock) View.VISIBLE else View.GONE
+        h.btnBlock.visibility = vis
+        h.btnSchedule.visibility = vis
 
         if (d.blocked) {
             h.estado.text = "Bloqueado"

@@ -8,7 +8,11 @@ data class Device(
     val online: Boolean,
     val blocked: Boolean,
     // Nombre interno que el usuario asigna (apodo). Se guarda en el teléfono.
-    val alias: String = ""
+    val alias: String = "",
+    // En qué equipo está conectado: "Xiaomi" o "Totalplay (Huawei)".
+    val source: String = "Xiaomi",
+    // Solo los equipos del Xiaomi se pueden bloquear/programar (por ahora).
+    val canBlock: Boolean = true
 ) {
     fun displayName(): String = when {
         alias.isNotBlank() -> alias

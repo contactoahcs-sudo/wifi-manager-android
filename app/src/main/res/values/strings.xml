@@ -31,7 +31,15 @@
     <string name="horario_ayuda">Franja: dias|inicio|fin. Días 0=Lun..6=Dom. Ej: 01234|22:00|06:00 (Lun-Vie de 22:00 a 06:00). Varias separadas por ; </string>
     <string name="horario_guardado">Horario guardado</string>
     <string name="horario_quitado">Horario quitado</string>
-    <string name="cambiar_pass_wifi">Cambiar contraseña del WiFi</string>
+    <string name="cambiar_pass_wifi">Cambiar contraseña del WiFi (Xiaomi)</string>
+    <string name="config_huawei">Configurar módem Totalplay (Huawei)</string>
+    <string name="config_huawei_ayuda">Datos del panel del módem principal. Vienen en la etiqueta de abajo del módem: IP (normalmente 192.168.100.1), usuario (root) y contraseña (la que dice "password:" en la etiqueta, no la clave del WiFi). Se guarda solo en este teléfono.</string>
+    <string name="ip_huawei">IP del módem (ej. 192.168.100.1)</string>
+    <string name="user_huawei">Usuario del panel (ej. root)</string>
+    <string name="pass_huawei">Contraseña del panel del módem</string>
+    <string name="diagnostico_huawei">Diagnóstico módem Totalplay</string>
+    <string name="equipos_resumen">%1$d equipos · Totalplay %2$d · Xiaomi %3$d</string>
+    <string name="quitar_huawei">Quitar</string>
     <string name="cambiar">Cambiar</string>
     <string name="cambiar_pass_aviso">Esto cambia la contraseña del WiFi en el router. Se desconectarán TODOS los equipos (incluido este teléfono) y solo volverán a entrar los que tengan la nueva contraseña. El nombre de la red (SSID) no cambia.</string>
     <string name="pass_nueva">Nueva contraseña del WiFi (mín. 8)</string>

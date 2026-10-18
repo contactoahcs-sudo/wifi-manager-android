@@ -109,7 +109,9 @@ class MiWifiClient(ip: String, private val password: String) {
                     name = name,
                     vendor = Vendors.lookup(mac),
                     online = online,
-                    blocked = blocked
+                    blocked = blocked,
+                    source = "Xiaomi",
+                    canBlock = true
                 )
             )
         }
