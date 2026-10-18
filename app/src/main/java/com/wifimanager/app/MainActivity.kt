@@ -49,7 +49,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menu.add(0, 1, 0, getString(R.string.config_router))
         menu.add(0, 3, 1, getString(R.string.denegar_mac_aleatoria)).isCheckable = true
-        menu.add(0, 2, 2, getString(R.string.buscar_actualizacion))
+        menu.add(0, 4, 2, getString(R.string.cambiar_pass_wifi))
+        menu.add(0, 2, 3, getString(R.string.buscar_actualizacion))
         return true
     }
 
@@ -63,6 +64,7 @@ class MainActivity : AppCompatActivity() {
             1 -> { showConfigDialog(); return true }
             2 -> { checkUpdate(); return true }
             3 -> { toggleAutoBlockRandom(); return true }
+            4 -> { showChangeWifiPassword(); return true }
         }
         return super.onOptionsItemSelected(item)
     }
@@ -196,6 +198,65 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(R.string.cancelar, null)
             .show()
     }
+
+    // ---- cambiar la contraseña del WiFi ----
+    private fun showChangeWifiPassword() {
+        if (!Prefs.isConfigured(this)) { showConfigDialog(); return }
+        val view = layoutInflater.inflate(R.layout.dialog_wifi_pass, null)
+        val p1 = view.findViewById<EditText>(R.id.pass1)
+        val p2 = view.findViewById<EditText>(R.id.pass2)
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.cambiar_pass_wifi)
+            .setMessage(R.string.cambiar_pass_aviso)
+            .setView(view)
+            .setPositiveButton(R.string.cambiar) { _, _ ->
+                val a = p1.text.toString()
+                val b = p2.text.toString()
+                when {
+                    a.length < 8 -> toast(getString(R.string.pass_corta))
+                    a != b -> toast(getString(R.string.pass_no_coincide))
+                    else -> doChangeWifiPassword(a)
+                }
+            }
+            .setNegativeButton(R.string.cancelar, null)
+            .show()
+    }
+
+    private fun doChangeWifiPassword(newPass: String) {
+        status.text = getString(R.string.cambiando_pass)
+        lifecycleScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                try {
+                    val n = MiWifiClient(
+                        Prefs.getIp(this@MainActivity),
+                        Prefs.getPassword(this@MainActivity)
+                    ).setWifiPassword(newPass)
+                    Result.success(n)
+                } catch (e: Exception) { Result.failure(e) }
+            }
+            res.onSuccess {
+                status.text = getString(R.string.pass_cambiada)
+                // Al reiniciar el WiFi este teléfono se desconecta; avisamos y no refrescamos.
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(R.string.pass_cambiada)
+                    .setMessage(R.string.pass_cambiada_msg)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }.onFailure {
+                // Puede fallar la RESPUESTA porque el WiFi ya se reinició y este teléfono se cayó.
+                status.text = getString(R.string.pass_quiza)
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(R.string.cambiar_pass_wifi)
+                    .setMessage(R.string.pass_quiza_msg)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
+        }
+    }
+
+    private fun toast(msg: String) =
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
     // ---- denegar equipos con MAC aleatoria ----
     // Bloquea los equipos de MAC aleatoria, EXCEPTO los que tengan nombre asignado

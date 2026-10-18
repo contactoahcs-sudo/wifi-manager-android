@@ -4,6 +4,7 @@ import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
@@ -129,6 +130,52 @@ class MiWifiClient(ip: String, private val password: String) {
         if (json.optInt("code", -1) != 0) {
             throw RuntimeException("El router no aplicó el cambio: $json")
         }
+    }
+
+    private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
+
+    /** Lee la configuración actual de WiFi (todas las bandas). */
+    private fun wifiDetail(): org.json.JSONArray {
+        ensureToken()
+        var json = getJson("/cgi-bin/luci/;stok=$token/api/xqnetwork/wifi_detail_all")
+        if (json.optInt("code", -1) != 0) {
+            token = null; ensureToken()
+            json = getJson("/cgi-bin/luci/;stok=$token/api/xqnetwork/wifi_detail_all")
+        }
+        return json.optJSONArray("info") ?: org.json.JSONArray()
+    }
+
+    /**
+     * Cambia la contraseña del WiFi en todas las bandas (2.4 y 5 GHz),
+     * conservando el nombre de red (SSID), el cifrado y el canal actuales.
+     * Reinicia el WiFi: TODOS los equipos se desconectan y deben reconectarse
+     * con la nueva contraseña. Devuelve cuántas bandas se cambiaron.
+     */
+    fun setWifiPassword(newPassword: String): Int {
+        val info = wifiDetail()
+        var changed = 0
+        for (i in 0 until info.length()) {
+            val b = info.getJSONObject(i)
+            val ssid = b.optString("ssid", "")
+            if (ssid.isEmpty()) continue
+            val idx = b.optInt("wifiIndex", i + 1)
+            val encType = b.optString("encryption", "psk2").ifEmpty { "psk2" }
+            val ch = b.optString("channel", "0")
+            val bw = b.optString("bandwidth", "0")
+            val hidden = b.optString("hidden", "0")
+            val on = b.optString("on", "1")
+            val params = "wifiIndex=$idx&on=$on&ssid=${enc(ssid)}" +
+                "&encryption=$encType&password=${enc(newPassword)}" +
+                "&channel=$ch&bandwidth=$bw&hidden=$hidden"
+            var r = getJson("/cgi-bin/luci/;stok=$token/api/xqnetwork/set_wifi?$params")
+            if (r.optInt("code", -1) != 0) {
+                token = null; ensureToken()
+                r = getJson("/cgi-bin/luci/;stok=$token/api/xqnetwork/set_wifi?$params")
+            }
+            if (r.optInt("code", -1) == 0) changed++
+        }
+        if (changed == 0) throw RuntimeException("El router no aceptó el cambio de contraseña.")
+        return changed
     }
 
     /** Prueba conexión + contraseña sin bloquear nada. */
