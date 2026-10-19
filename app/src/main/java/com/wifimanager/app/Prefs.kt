@@ -36,6 +36,8 @@ object Prefs {
     fun setSchedule(c: Context, mac: String, value: String) {
         sp(c).edit().putString("sched_$mac", value).apply()
     }
+    fun getScheduleSource(c: Context, mac: String): String = sp(c).getString("schedsrc_$mac", "Xiaomi") ?: "Xiaomi"
+    fun setScheduleSource(c: Context, mac: String, src: String) { sp(c).edit().putString("schedsrc_$mac", src).apply() }
     fun allScheduleKeys(c: Context): List<String> =
         sp(c).all.keys.filter { it.startsWith("sched_") }.map { it.removePrefix("sched_") }
 

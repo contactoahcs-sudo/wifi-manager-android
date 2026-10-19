@@ -17,40 +17,37 @@ import java.util.Calendar
 class ScheduleWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        if (!Prefs.isXiaomiConfigured(applicationContext)) return@withContext Result.success()
-        val client = MiWifiClient(
-            Prefs.getIp(applicationContext),
-            Prefs.getPassword(applicationContext)
-        )
-        try {
-            client.login()
-        } catch (e: Exception) {
-            return@withContext Result.retry()
-        }
+        val ctx = applicationContext
+        val xi: MiWifiClient? = if (Prefs.isXiaomiConfigured(ctx)) MiWifiClient(Prefs.getIp(ctx), Prefs.getPassword(ctx)) else null
+        val hw: HuaweiClient? = if (Prefs.isHuaweiConfigured(ctx)) HuaweiClient(Prefs.getHwIp(ctx), Prefs.getHwUser(ctx), Prefs.getHwPassword(ctx)) else null
+        if (xi == null && hw == null) return@withContext Result.success()
+        try { xi?.login() } catch (_: Exception) { if (hw == null) return@withContext Result.retry() }
 
         val now = Calendar.getInstance()
-        for (mac in Prefs.allScheduleKeys(applicationContext)) {
-            val sched = Prefs.getSchedule(applicationContext, mac)
+        for (mac in Prefs.allScheduleKeys(ctx)) {
+            val sched = Prefs.getSchedule(ctx, mac)
             if (sched.isBlank()) continue
             val shouldBlock = inAnyWindow(sched, now)
+            val src = Prefs.getScheduleSource(ctx, mac)
             try {
-                client.setBlock(mac, shouldBlock)
+                if (src.startsWith("Totalplay") && hw != null) {
+                    if (shouldBlock) hw.block(mac) else hw.unblock(mac)
+                } else if (xi != null) {
+                    xi.setBlock(mac, shouldBlock)
+                }
             } catch (_: Exception) { /* seguimos con los demás */ }
         }
 
-        // Denegar MAC aleatoria en segundo plano (excepto equipos con nombre asignado).
-        if (Prefs.isAutoBlockRandom(applicationContext)) {
-            Vendors.init(applicationContext)
+        // Denegar MAC aleatoria en segundo plano (solo Xiaomi; en el Huawei el filtro es de 8 entradas).
+        if (Prefs.isAutoBlockRandom(ctx) && xi != null) {
+            Vendors.init(ctx)
             try {
-                for (d in client.deviceList()) {
-                    if (Vendors.isRandom(d.mac) &&
-                        Prefs.getAlias(applicationContext, d.mac).isBlank() &&
-                        !d.blocked
-                    ) {
-                        try { client.setBlock(d.mac, true) } catch (_: Exception) {}
+                for (d in xi.deviceList()) {
+                    if (Vendors.isRandom(d.mac) && Prefs.getAlias(ctx, d.mac).isBlank() && !d.blocked) {
+                        try { xi.setBlock(d.mac, true) } catch (_: Exception) {}
                     }
                 }
-            } catch (_: Exception) { /* si falla la lista, lo reintenta el siguiente ciclo */ }
+            } catch (_: Exception) { }
         }
         Result.success()
     }

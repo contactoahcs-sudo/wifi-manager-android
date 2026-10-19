@@ -210,7 +210,7 @@ class MainActivity : AppCompatActivity() {
             for (m in r.blockedXi) if (!porMac.containsKey(m))
                 porMac[m] = Device(m, "", "", Vendors.lookup(m), online = false, blocked = true, source = "Xiaomi", canBlock = true)
             for (m in r.blockedHw) if (!porMac.containsKey(m))
-                porMac[m] = Device(m, "", "", Vendors.lookup(m), online = false, blocked = true, source = "Totalplay (Huawei)", canBlock = false)
+                porMac[m] = Device(m, "", "", Vendors.lookup(m), online = false, blocked = true, source = "Totalplay (Huawei)", canBlock = true)
             all = porMac.values.map { it.copy(alias = Prefs.getAlias(ctx, it.mac)) }
             countHw = r.hw.size; countXi = r.xiaomi.size; lastErrors = r.errs
             render()
@@ -352,8 +352,7 @@ class MainActivity : AppCompatActivity() {
                 sb.append("MAC aleatoria: ").append(all.count { Vendors.isRandom(it.mac) }).append("\n")
                 sb.toString()
             }
-            AlertDialog.Builder(this@MainActivity).setTitle(R.string.estado_red).setMessage(txt)
-                .setPositiveButton(android.R.string.ok, null).show()
+            showReport(getString(R.string.estado_red), txt)
         }
     }
 
@@ -378,8 +377,7 @@ class MainActivity : AppCompatActivity() {
                 catch (e: Exception) { "ERROR: ${e.message}" }
             }
             render()
-            AlertDialog.Builder(this@MainActivity).setTitle(R.string.diag_avanzado).setMessage(txt.take(14000))
-                .setPositiveButton(android.R.string.ok, null).show()
+            showReport(getString(R.string.diag_avanzado), txt)
         }
     }
 
@@ -416,6 +414,7 @@ class MainActivity : AppCompatActivity() {
             .setView(input)
             .setPositiveButton(R.string.guardar) { _, _ ->
                 Prefs.setSchedule(this, d.mac, input.text.toString().trim())
+                Prefs.setScheduleSource(this, d.mac, d.source)
                 Toast.makeText(this, R.string.horario_guardado, Toast.LENGTH_SHORT).show()
                 scheduleWorker()
             }
@@ -488,11 +487,7 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) { "ERROR: ${e.message}\n\n" + c.lastDebug }
             }
             status.text = getString(R.string.diagnostico_huawei)
-            AlertDialog.Builder(this@MainActivity)
-                .setTitle(R.string.diagnostico_huawei)
-                .setMessage(txt.take(3000))
-                .setPositiveButton(android.R.string.ok, null)
-                .show()
+            showReport(getString(R.string.diagnostico_huawei), txt)
         }
     }
 
@@ -552,6 +547,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Muestra un reporte largo con botones Copiar y Compartir (para pegarlo en el chat). */
+    private fun showReport(title: String, text: String) {
+        val tv = TextView(this).apply {
+            setText(text)
+            setTextIsSelectable(true)
+            textSize = 12f
+            setPadding(40, 20, 40, 20)
+        }
+        val scroll = ScrollView(this).apply { addView(tv) }
+        AlertDialog.Builder(this).setTitle(title).setView(scroll)
+            .setPositiveButton("Copiar") { _, _ ->
+                val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText(title, text))
+                toast("Copiado al portapapeles")
+            }
+            .setNeutralButton("Compartir") { _, _ ->
+                val i = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, title); putExtra(Intent.EXTRA_TEXT, text) }
+                startActivity(Intent.createChooser(i, title))
+            }
+            .setNegativeButton(android.R.string.ok, null)
+            .show()
+    }
+
     private fun toast(msg: String) =
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
@@ -559,7 +577,7 @@ class MainActivity : AppCompatActivity() {
     // Bloquea los equipos de MAC aleatoria, EXCEPTO los que tengan nombre asignado
     // (esos se consideran de confianza). Así nadie entra con MAC aleatoria salvo tus equipos.
     private fun enforceRandomBlock(devs: List<Device>) {
-        val objetivos = devs.filter { it.canBlock && Vendors.isRandom(it.mac) && it.alias.isBlank() && !it.blocked }
+        val objetivos = devs.filter { it.source == "Xiaomi" && Vendors.isRandom(it.mac) && it.alias.isBlank() && !it.blocked }
         if (objetivos.isEmpty()) return
         lifecycleScope.launch {
             val n = withContext(Dispatchers.IO) {

@@ -162,7 +162,7 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
                     mac = mac, ip = ip, name = name,
                     vendor = Vendors.lookup(mac),
                     online = online, blocked = false,
-                    source = "Totalplay (Huawei)", canBlock = false
+                    source = "Totalplay (Huawei)", canBlock = true
                 ))
             }
             return out
@@ -202,10 +202,12 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
         "/html/bbsp/wlanmacfilter/wlanmacfilter.asp"
     )
 
-    /** MACs que el módem tiene en filtro/lista negra (lectura; mejor esfuerzo). */
+    /** MACs que el módem tiene en filtro/lista negra. */
     fun blockedMacs(): Set<String> {
         ensure()
         val out = HashSet<String>()
+        try { filterEntries().forEach { out.add(it.mac) } } catch (_: Exception) {}
+        if (out.isNotEmpty()) return out
         for (p in MACFILTER_PAGES) {
             val body = try { get(p) } catch (_: Exception) { "" }
             if (body.length < 200 || body.contains("login.cgi") || body.contains("<title>Login")) continue
@@ -237,10 +239,20 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
             links.take(40).forEach { sb.append("  ").append(it).append("\n") }
             sb.append("\n")
         }
-        for (p in MACFILTER_PAGES + WLAN_PAGES) {
+        for (p in (MACFILTER_PAGES + WLAN_PAGES).distinct()) {
             val body = try { get(p) } catch (e: Exception) { "ERR ${e.message}" }
             sb.append("=== ").append(p).append(" (").append(body.length).append(")\n")
             if (body.length < 300) { sb.append(body.take(120)).append("\n\n"); continue }
+            // Primero: cómo envía (set.cgi / addParameter('x.' ...)), que es lo que necesitamos para WiFi.
+            var k = 0
+            for (line in body.lineSequence()) {
+                val t = line.trim()
+                if ((t.contains("addParameter(") && (t.contains("'x.") || t.contains("\"x.") || t.contains("'y.") || t.contains("\"y."))) ||
+                    t.contains(".cgi?")) {
+                    sb.append("> ").append(t.take(200)).append("\n")
+                    if (++k >= 120) break
+                }
+            }
             // Constructores de datos presentes
             val ctors = ENTRY.findAll(body).map { it.groupValues[1] }.groupingBy { it }.eachCount()
             sb.append("ctors=").append(ctors).append("\n")
@@ -250,7 +262,7 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
                 val t = line.trim()
                 if (t.isNotEmpty() && keys.containsMatchIn(t)) {
                     sb.append("| ").append(t.take(160)).append("\n")
-                    if (++n >= 70) break
+                    if (++n >= 160) break
                 }
             }
             // Formularios e inputs
@@ -260,6 +272,83 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
             sb.append("\n")
         }
         return sb.toString()
+    }
+
+    // ---------- Bloqueo / permiso en el módem (filtro MAC) ----------
+    //
+    // Descubierto con el "Diagnóstico avanzado" del firmware Totalplay:
+    //  - LAN:  /html/bbsp/macfilter/macfilter.asp   (InternetGatewayDevice.X_HW_Security.MacFilter)
+    //          add.cgi?x=...X_HW_Security.MacFilter  con x.SourceMACAddress, x.DeviceAlias
+    //          set.cgi?x=...X_HW_Security             con x.MacFilterRight=1 (activar), x.MacFilterPolicy=0 (lista negra)
+    //          del.cgi?RequestFile=...                con <domain de la entrada>=  (y x.X_HW_Token)
+    //  - WLAN: /html/bbsp/wlanmacfilter/wlanmacfilter.asp (X_HW_Security.WLANMacFilter.N), mismo del.cgi
+    //  Cada página trae un token propio: <input name="onttoken" value="...">.
+    private val PAGE_LAN = "/html/bbsp/macfilter/macfilter.asp"
+    private val PAGE_WLAN = "/html/bbsp/wlanmacfilter/wlanmacfilter.asp"
+
+    data class FilterEntry(val domain: String, val mac: String, val page: String)
+
+    private fun pageToken(body: String): String =
+        Regex("""name=["']onttoken["'][^>]*value=["']([0-9A-Fa-f]+)["']""").find(body)?.groupValues?.get(1)
+            ?: Regex("""id=["']hwonttoken["'][^>]*value=["']([0-9A-Fa-f]+)["']""").find(body)?.groupValues?.get(1)
+            ?: throw RuntimeException("El módem no entregó el token de la página.")
+
+    /** Entradas actuales del filtro MAC (LAN + WLAN). */
+    fun filterEntries(): List<FilterEntry> {
+        ensure()
+        val out = ArrayList<FilterEntry>()
+        for (page in listOf(PAGE_LAN, PAGE_WLAN)) {
+            val body = try { get(page) } catch (_: Exception) { "" }
+            if (body.length < 300) continue
+            for (m in ENTRY.findAll(body)) {
+                if (!m.groupValues[1].equals("stMacFilter", true)) continue
+                val f = m.groupValues[2].split(",").map { clean(it) }
+                val domain = f.firstOrNull { it.startsWith("InternetGatewayDevice.") } ?: continue
+                val mac = f.firstOrNull { MAC.matches(it) }?.uppercase() ?: continue
+                out.add(FilterEntry(domain, mac, page))
+            }
+        }
+        return out
+    }
+
+    private fun postForm(path: String, params: List<Pair<String, String>>): String {
+        val fb = FormBody.Builder()
+        for ((k, v) in params) fb.add(k, v)
+        return post(path, fb.build())
+    }
+
+    /** Bloquea un equipo (lo mete a la lista negra LAN del módem y activa el filtro). */
+    fun block(mac: String, alias: String = "") {
+        ensure()
+        val m = mac.uppercase()
+        if (filterEntries().any { it.mac == m }) return
+        val page = get(PAGE_LAN)
+        if (page.length < 300) throw RuntimeException("No se pudo abrir la página de filtro MAC del módem.")
+        val count = ENTRY.findAll(page).count { it.groupValues[1].equals("stMacFilter", true) } - 1
+        if (count >= 8) throw RuntimeException("El filtro del módem ya tiene 8 equipos (su máximo). Permite alguno para liberar espacio.")
+        val token = pageToken(page)
+        postForm("/html/bbsp/macfilter/add.cgi?x=InternetGatewayDevice.X_HW_Security.MacFilter&RequestFile=html/bbsp/macfilter/macfilter.asp",
+            listOf("x.SourceMACAddress" to m, "x.DeviceAlias" to alias.take(32).ifEmpty { "WifiManager" }, "x.X_HW_Token" to token))
+        // Activar el filtro en modo lista negra (0). Token nuevo por cada envío.
+        val page2 = get(PAGE_LAN)
+        postForm("/html/bbsp/macfilter/set.cgi?x=InternetGatewayDevice.X_HW_Security&RequestFile=html/bbsp/macfilter/macfilter.asp",
+            listOf("x.MacFilterRight" to "1", "x.MacFilterPolicy" to "0", "x.X_HW_Token" to pageToken(page2)))
+        if (filterEntries().none { it.mac == m }) throw RuntimeException("El módem no guardó el bloqueo.")
+    }
+
+    /** Permite un equipo (lo quita de la lista negra LAN o WLAN donde esté). */
+    fun unblock(mac: String) {
+        ensure()
+        val m = mac.uppercase()
+        val entries = filterEntries().filter { it.mac == m }
+        if (entries.isEmpty()) return
+        for (e in entries) {
+            val dir = e.page.substringBeforeLast('/')
+            val reqFile = e.page.removePrefix("/")
+            val token = pageToken(get(e.page))
+            postForm("$dir/del.cgi?RequestFile=$reqFile", listOf(e.domain to "", "x.X_HW_Token" to token))
+        }
+        if (filterEntries().any { it.mac == m }) throw RuntimeException("El módem no quitó el bloqueo.")
     }
 
     fun test(): Boolean { login(); return loggedIn }
