@@ -183,7 +183,8 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
                 val mac = f[macIdx].uppercase()
                 if (!vistos.add(mac)) continue
                 val ip = f.firstOrNull { IPV4.matches(it) } ?: ""
-                val online = f.any { it.equals("Online", true) } || m.groupValues[1].contains("Wifi", true)
+                // Conectado si el módem lo marca "Online" o si aparece en su lista de clientes WiFi actuales.
+                val online = f.any { it.equals("Online", true) } || m.groupValues[1].contains("Wifi", true) || wifiMacs.contains(mac)
                 // Orden conocido: ...,DevStatus(6),PortType,Time,HostName(9),...,UserDevAlias(13)
                 val alias = f.getOrNull(13).orEmpty()
                 val host = f.getOrNull(9).orEmpty()

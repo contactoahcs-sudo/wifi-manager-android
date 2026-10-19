@@ -350,7 +350,12 @@ class MainActivity : AppCompatActivity() {
                 val sb = StringBuilder()
                 if (Prefs.isXiaomiConfigured(this@MainActivity)) {
                     sb.append("— Xiaomi —\n")
-                    sb.append(try { MiWifiClient(Prefs.getIp(this@MainActivity), Prefs.getPassword(this@MainActivity)).wanInfoText() } catch (e: Exception) { "Error: ${e.message}" })
+                    val xc = MiWifiClient(Prefs.getIp(this@MainActivity), Prefs.getPassword(this@MainActivity))
+                    sb.append(try { xc.wanInfoText() } catch (e: Exception) { "Error: ${e.message}" })
+                    sb.append("\n\nWiFi (claves tapadas):\n")
+                    sb.append(try { xc.wifiDetailMasked() } catch (e: Exception) { "Error: ${e.message}" })
+                    sb.append("\nEquipos crudos del Xiaomi:\n")
+                    sb.append(try { xc.rawDeviceSample(4) } catch (e: Exception) { "Error: ${e.message}" })
                     sb.append("\n\n")
                 }
                 sb.append("— Equipos —\n")
@@ -552,14 +557,10 @@ class MainActivity : AppCompatActivity() {
                     .setMessage(R.string.pass_cambiada_msg)
                     .setPositiveButton(android.R.string.ok, null)
                     .show()
-            }.onFailure {
+            }.onFailure { e ->
                 // Puede fallar la RESPUESTA porque el WiFi ya se reinició y este teléfono se cayó.
                 status.text = getString(R.string.pass_quiza)
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle(R.string.cambiar_pass_wifi)
-                    .setMessage(R.string.pass_quiza_msg)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show()
+                showReport(getString(R.string.cambiar_pass_wifi), getString(R.string.pass_quiza_msg) + "\n\nDetalle:\n" + (e.message ?: e.toString()))
             }
         }
     }

@@ -29,6 +29,20 @@ class MiWifiClient(ip: String, private val password: String) {
 
     @Volatile private var token: String? = null
 
+    /** Últimas respuestas crudas (sin contraseñas), para diagnóstico. */
+    var lastDebug: String = ""
+        private set
+
+    private fun postJson(path: String, params: List<Pair<String, String>>): JSONObject {
+        val fb = FormBody.Builder()
+        for ((k, v) in params) fb.add(k, v)
+        val req = Request.Builder().url(base + path).post(fb.build()).build()
+        http.newCall(req).execute().use { resp ->
+            val body = resp.body?.string() ?: "{}"
+            return try { JSONObject(body) } catch (_: Exception) { JSONObject().put("code", -1).put("raw", body.take(300)) }
+        }
+    }
+
     companion object {
         // Clave pública fija usada por el firmware MiWiFi para cifrar la contraseña.
         private const val KEY = "a2ffa5c9be07488bbb04a3a47d3c5f6a"
@@ -100,7 +114,8 @@ class MiWifiClient(ip: String, private val password: String) {
             val mac = d.optString("mac", "").uppercase()
             val ip = d.optJSONArray("ip")?.optJSONObject(0)?.optString("ip", "") ?: ""
             val name = d.optString("name", "")
-            val online = d.optInt("online", 1) == 1
+            // "online" llega como 1/0, "1"/"0" o true/false según firmware.
+            val online = d.opt("online")?.toString()?.let { it == "1" || it.equals("true", true) } ?: true
             val blocked = d.optInt("isap", 0) == 0 && d.optInt("ban", 0) == 1
             // type.type: 0 = cable, 1 = WiFi 2.4 GHz, 2 = WiFi 5 GHz (API MiWiFi).
             val conn = when (d.optJSONObject("type")?.optInt("type", -1) ?: -1) { 0 -> "Cable"; 1, 2 -> "WiFi"; else -> "" }
@@ -159,28 +174,74 @@ class MiWifiClient(ip: String, private val password: String) {
     fun setWifiPassword(newPassword: String): Int {
         val info = wifiDetail()
         var changed = 0
+        val dbg = StringBuilder()
         for (i in 0 until info.length()) {
             val b = info.getJSONObject(i)
             val ssid = b.optString("ssid", "")
             if (ssid.isEmpty()) continue
             val idx = b.optInt("wifiIndex", i + 1)
+            if (idx == 3) continue // la red de invitados se maneja aparte
             val encType = b.optString("encryption", "psk2").ifEmpty { "psk2" }
-            val ch = b.optString("channel", "0")
-            val bw = b.optString("bandwidth", "0")
-            val hidden = b.optString("hidden", "0")
-            val on = b.optString("on", "1")
-            val params = "wifiIndex=$idx&on=$on&ssid=${enc(ssid)}" +
-                "&encryption=$encType&password=${enc(newPassword)}" +
-                "&channel=$ch&bandwidth=$bw&hidden=$hidden"
-            var r = getJson("/cgi-bin/luci/;stok=$token/api/xqnetwork/set_wifi?$params")
-            if (r.optInt("code", -1) != 0) {
-                token = null; ensureToken()
-                r = getJson("/cgi-bin/luci/;stok=$token/api/xqnetwork/set_wifi?$params")
+            // Reenviamos la configuración actual tal cual, solo cambia la contraseña.
+            val params = ArrayList<Pair<String, String>>()
+            params.add("wifiIndex" to idx.toString())
+            params.add("on" to b.optString("on", "1").ifEmpty { "1" })
+            params.add("ssid" to ssid)
+            params.add("encryption" to encType)
+            params.add("password" to newPassword)
+            for (k in listOf("channel", "bandwidth", "hidden", "txpwr", "txbf", "bsd")) {
+                val v = b.opt(k)?.toString() ?: continue
+                if (v.isNotEmpty() && v != "null") params.add(k to v)
             }
+            ensureToken()
+            // El firmware MiWiFi espera POST (formulario). Si no lo acepta, probamos por GET.
+            var r = postJson("/cgi-bin/luci/;stok=$token/api/xqnetwork/set_wifi", params)
+            if (r.optInt("code", -1) == 401) { token = null; ensureToken(); r = postJson("/cgi-bin/luci/;stok=$token/api/xqnetwork/set_wifi", params) }
+            if (r.optInt("code", -1) != 0) {
+                val q = params.joinToString("&") { (k, v) -> "$k=${enc(v)}" }
+                r = getJson("/cgi-bin/luci/;stok=$token/api/xqnetwork/set_wifi?$q")
+            }
+            dbg.append("banda ").append(idx).append(" (").append(ssid).append("): ").append(r.toString().take(200)).append("\n")
             if (r.optInt("code", -1) == 0) changed++
         }
-        if (changed == 0) throw RuntimeException("El router no aceptó el cambio de contraseña.")
+        lastDebug = dbg.toString()
+        if (changed == 0) throw RuntimeException("El router no aceptó el cambio de contraseña.\n$dbg")
+        // Verificamos leyendo de nuevo la configuración (si el WiFi ya se reinició puede no responder).
+        try {
+            val after = wifiDetail()
+            var ok = 0
+            for (i in 0 until after.length()) {
+                val b = after.getJSONObject(i)
+                if (b.optInt("wifiIndex", i + 1) == 3) continue
+                if (b.optString("password", "") == newPassword) ok++
+            }
+            lastDebug += "verificación: $ok banda(s) con la clave nueva\n"
+            if (ok == 0) throw RuntimeException("El router respondió OK pero la clave sigue igual.\n$dbg")
+        } catch (e: java.io.IOException) { /* se cayó el WiFi al reiniciar: normal */ }
         return changed
+    }
+
+    /** Configuración WiFi actual con las contraseñas tapadas (para diagnóstico). */
+    fun wifiDetailMasked(): String {
+        val info = wifiDetail()
+        val sb = StringBuilder()
+        for (i in 0 until info.length()) {
+            val b = JSONObject(info.getJSONObject(i).toString())
+            if (b.has("password")) b.put("password", "****")
+            sb.append(b.toString()).append("\n")
+        }
+        return sb.toString()
+    }
+
+    /** Primeros equipos de la lista tal como los manda el router (para diagnóstico). */
+    fun rawDeviceSample(n: Int = 3): String {
+        ensureToken()
+        var j = getJson("/cgi-bin/luci/;stok=$token/api/misystem/devicelist")
+        if (j.optInt("code", -1) != 0) { token = null; ensureToken(); j = getJson("/cgi-bin/luci/;stok=$token/api/misystem/devicelist") }
+        val arr = j.optJSONArray("list") ?: return "code=${j.optInt("code", -1)} sin lista: ${j.toString().take(300)}"
+        val sb = StringBuilder("total=${arr.length()}\n")
+        for (i in 0 until minOf(n, arr.length())) sb.append(arr.optJSONObject(i)?.toString()?.take(600)).append("\n")
+        return sb.toString()
     }
 
     private fun api(path: String): JSONObject {
