@@ -102,6 +102,8 @@ class MiWifiClient(ip: String, private val password: String) {
             val name = d.optString("name", "")
             val online = d.optInt("online", 1) == 1
             val blocked = d.optInt("isap", 0) == 0 && d.optInt("ban", 0) == 1
+            // type.type: 0 = cable, 1 = WiFi 2.4 GHz, 2 = WiFi 5 GHz (API MiWiFi).
+            val conn = when (d.optJSONObject("type")?.optInt("type", -1) ?: -1) { 0 -> "Cable"; 1, 2 -> "WiFi"; else -> "" }
             out.add(
                 Device(
                     mac = mac,
@@ -111,7 +113,8 @@ class MiWifiClient(ip: String, private val password: String) {
                     online = online,
                     blocked = blocked,
                     source = "Xiaomi",
-                    canBlock = true
+                    canBlock = true,
+                    conn = conn
                 )
             )
         }

@@ -99,6 +99,39 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
 
     private fun ensure() { if (!loggedIn) login() }
 
+    /** ¿La respuesta es una página real del panel (y no la de "vuelve a iniciar sesión")? */
+    private fun esPagina(body: String): Boolean =
+        body.length > 1500 || body.contains("onttoken") || body.contains("new st") || body.contains("UserDevinfo", true)
+
+    /**
+     * GET de una página del panel. El módem solo mantiene UNA sesión y la caduca rápido:
+     * si contesta con la página corta de "sesión inválida", volvemos a iniciar sesión y reintentamos.
+     */
+    private fun getPage(path: String): String {
+        ensure()
+        var body = get(path)
+        if (!esPagina(body)) {
+            loggedIn = false
+            login()
+            body = get(path)
+        }
+        lastPage = body
+        return body
+    }
+    @Volatile private var lastPage: String = ""
+
+    /** Cierra la sesión del panel para no dejarla ocupada (el módem solo admite una). */
+    fun logout() {
+        if (!loggedIn) return
+        try {
+            val page = get("/html/bbsp/macfilter/macfilter.asp")
+            val token = Regex("""name=["']onttoken["'][^>]*value=["']([0-9A-Fa-f]+)["']""").find(page)?.groupValues?.get(1) ?: ""
+            post("/logout.cgi?RequestFile=html/logout.html", FormBody.Builder().add("x.X_HW_Token", token).build())
+        } catch (_: Exception) {}
+        loggedIn = false
+        cookies.clear()
+    }
+
     /** Lista de equipos conectados al módem (cable + WiFi). */
     fun deviceList(): List<Device> {
         ensure()
@@ -134,6 +167,12 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
         fun parse(body: String): List<Device> {
             val out = ArrayList<Device>()
             val vistos = HashSet<String>()
+            // MACs que el módem reporta como clientes WiFi (stWifiWorkingMode).
+            val wifiMacs = HashSet<String>()
+            for (m in ENTRY.findAll(body)) {
+                if (!m.groupValues[1].contains("Wifi", true)) continue
+                for (raw in m.groupValues[2].split(",")) { val v = clean(raw).uppercase(); if (MAC.matches(v)) wifiMacs.add(v) }
+            }
             for (m in ENTRY.findAll(body)) {
                 if (m.groupValues[1].equals("Array", true)) continue
                 val f = m.groupValues[2].split(",").map { clean(it) }
@@ -148,6 +187,14 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
                 // Orden conocido: ...,DevStatus(6),PortType,Time,HostName(9),...,UserDevAlias(13)
                 val alias = f.getOrNull(13).orEmpty()
                 val host = f.getOrNull(9).orEmpty()
+                // Tipo de conexión: PortType/DevType traen "LAN1".."LAN4" (cable) o "SSID1".. / "WLAN" (WiFi).
+                val port = f.drop(macIdx + 1).firstOrNull { it.startsWith("LAN", true) || it.startsWith("SSID", true) || it.startsWith("WLAN", true) } ?: ""
+                val conn = when {
+                    wifiMacs.contains(mac) -> "WiFi"
+                    port.startsWith("LAN", true) -> "Cable"
+                    port.startsWith("SSID", true) || port.startsWith("WLAN", true) -> "WiFi"
+                    else -> ""
+                }
                 val name = when {
                     alias.isNotBlank() && !alias.equals("Online", true) && !alias.equals("Offline", true) -> alias
                     host.isNotBlank() && !host.equals("Online", true) && !host.equals("Offline", true) -> host
@@ -162,7 +209,7 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
                     mac = mac, ip = ip, name = name,
                     vendor = Vendors.lookup(mac),
                     online = online, blocked = false,
-                    source = "Totalplay (Huawei)", canBlock = true
+                    source = "Totalplay (Huawei)", canBlock = true, conn = conn
                 ))
             }
             return out
@@ -209,7 +256,7 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
         try { filterEntries().forEach { out.add(it.mac) } } catch (_: Exception) {}
         if (out.isNotEmpty()) return out
         for (p in MACFILTER_PAGES) {
-            val body = try { get(p) } catch (_: Exception) { "" }
+            val body = try { getPage(p) } catch (_: Exception) { "" }
             if (body.length < 200 || body.contains("login.cgi") || body.contains("<title>Login")) continue
             // Solo entradas de datos (new stXxx(...)), no HTML.
             for (m in ENTRY.findAll(body)) {
@@ -232,7 +279,7 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
         val urlRe = Regex("""(?:href|src|action)\s*=\s*["']([^"']*(?:wlan|macfilter|Wlan|WLAN|ssid)[^"']*)["']""")
         // Enlaces del menú principal: para descubrir la página de WiFi real.
         for (p in listOf("/index.asp", "/html/bbsp/common/leftmenu.asp", "/html/amp/menu/menu.asp")) {
-            val body = try { get(p) } catch (e: Exception) { "" }
+            val body = try { getPage(p) } catch (e: Exception) { "" }
             if (body.length < 200) continue
             val links = urlRe.findAll(body).map { it.groupValues[1] }.toSet()
             sb.append("=== ").append(p).append(" (").append(body.length).append(") enlaces wlan/macfilter:\n")
@@ -240,9 +287,13 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
             sb.append("\n")
         }
         for (p in (MACFILTER_PAGES + WLAN_PAGES).distinct()) {
-            val body = try { get(p) } catch (e: Exception) { "ERR ${e.message}" }
+            val body = try { getPage(p) } catch (e: Exception) { "ERR ${e.message}" }
             sb.append("=== ").append(p).append(" (").append(body.length).append(")\n")
             if (body.length < 300) { sb.append(body.take(120)).append("\n\n"); continue }
+            // Página corta sin datos: mostramos su texto para saber qué contestó el módem.
+            if (!esPagina(body)) {
+                sb.append("?? ").append(body.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim().take(400)).append("\n\n"); continue
+            }
             // Primero: cómo envía (set.cgi / addParameter('x.' ...)), que es lo que necesitamos para WiFi.
             var k = 0
             for (line in body.lineSequence()) {
@@ -298,7 +349,7 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
         ensure()
         val out = ArrayList<FilterEntry>()
         for (page in listOf(PAGE_LAN, PAGE_WLAN)) {
-            val body = try { get(page) } catch (_: Exception) { "" }
+            val body = try { getPage(page) } catch (_: Exception) { "" }
             if (body.length < 300) continue
             for (m in ENTRY.findAll(body)) {
                 if (!m.groupValues[1].equals("stMacFilter", true)) continue
@@ -322,15 +373,16 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
         ensure()
         val m = mac.uppercase()
         if (filterEntries().any { it.mac == m }) return
-        val page = get(PAGE_LAN)
-        if (page.length < 300) throw RuntimeException("No se pudo abrir la página de filtro MAC del módem.")
+        val page = getPage(PAGE_LAN)
+        if (!esPagina(page)) throw RuntimeException("El módem no abrió la página de filtro MAC (respondió: " +
+            page.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim().take(160) + ")")
         val count = ENTRY.findAll(page).count { it.groupValues[1].equals("stMacFilter", true) } - 1
         if (count >= 8) throw RuntimeException("El filtro del módem ya tiene 8 equipos (su máximo). Permite alguno para liberar espacio.")
         val token = pageToken(page)
         postForm("/html/bbsp/macfilter/add.cgi?x=InternetGatewayDevice.X_HW_Security.MacFilter&RequestFile=html/bbsp/macfilter/macfilter.asp",
             listOf("x.SourceMACAddress" to m, "x.DeviceAlias" to alias.take(32).ifEmpty { "WifiManager" }, "x.X_HW_Token" to token))
         // Activar el filtro en modo lista negra (0). Token nuevo por cada envío.
-        val page2 = get(PAGE_LAN)
+        val page2 = getPage(PAGE_LAN)
         postForm("/html/bbsp/macfilter/set.cgi?x=InternetGatewayDevice.X_HW_Security&RequestFile=html/bbsp/macfilter/macfilter.asp",
             listOf("x.MacFilterRight" to "1", "x.MacFilterPolicy" to "0", "x.X_HW_Token" to pageToken(page2)))
         if (filterEntries().none { it.mac == m }) throw RuntimeException("El módem no guardó el bloqueo.")
@@ -345,7 +397,7 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
         for (e in entries) {
             val dir = e.page.substringBeforeLast('/')
             val reqFile = e.page.removePrefix("/")
-            val token = pageToken(get(e.page))
+            val token = pageToken(getPage(e.page))
             postForm("$dir/del.cgi?RequestFile=$reqFile", listOf(e.domain to "", "x.X_HW_Token" to token))
         }
         if (filterEntries().any { it.mac == m }) throw RuntimeException("El módem no quitó el bloqueo.")

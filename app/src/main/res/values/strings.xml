@@ -99,4 +99,6 @@
     <string name="error_descarga">No se pudo descargar la actualización.</string>
     <string name="permiso_instalar">Permiso para instalar</string>
     <string name="permiso_instalar_msg">Para actualizar, Android te pedirá permitir que esta app instale actualizaciones. Actívalo y vuelve a intentar.</string>
+    <string name="f_cable">Por cable</string>
+    <string name="f_wifi">Por WiFi</string>
 </resources>

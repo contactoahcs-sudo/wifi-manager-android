@@ -62,7 +62,8 @@ class DeviceAdapter(
         val d = items[position]
         h.name.text = d.displayName()
         val realName = if (d.alias.isNotBlank() && d.name.isNotBlank()) "\nNombre en red: ${d.name}" else ""
-        h.detalle.text = "IP: ${d.ip.ifBlank { "—" }}\nMAC: ${d.mac}\nOrigen: ${d.vendor}\nRed: ${d.source}$realName"
+        val conex = if (d.conn.isNotBlank()) "\nConexión: ${d.conn}" else ""
+        h.detalle.text = "IP: ${d.ip.ifBlank { "—" }}\nMAC: ${d.mac}\nOrigen: ${d.vendor}\nRed: ${d.source}$conex$realName"
 
         when {
             d.blocked -> {

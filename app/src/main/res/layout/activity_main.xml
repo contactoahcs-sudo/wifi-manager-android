@@ -67,6 +67,10 @@
                 android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_totalplay" />
             <com.google.android.material.chip.Chip android:id="@+id/c_xiaomi" style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_xiaomi" />
+            <com.google.android.material.chip.Chip android:id="@+id/c_cable" style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_cable" />
+            <com.google.android.material.chip.Chip android:id="@+id/c_wifi" style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_wifi" />
             <com.google.android.material.chip.Chip android:id="@+id/c_ocultos" style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/f_ocultos" />
         </com.google.android.material.chip.ChipGroup>

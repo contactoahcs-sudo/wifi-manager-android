@@ -62,7 +62,7 @@ class MainActivity : AppCompatActivity() {
         val chipByFilter = mapOf(
             "todos" to R.id.c_todos, "conectados" to R.id.c_conectados, "bloqueados" to R.id.c_bloqueados,
             "desconectados" to R.id.c_desconectados, "totalplay" to R.id.c_totalplay,
-            "xiaomi" to R.id.c_xiaomi, "ocultos" to R.id.c_ocultos
+            "xiaomi" to R.id.c_xiaomi, "cable" to R.id.c_cable, "wifi" to R.id.c_wifi, "ocultos" to R.id.c_ocultos
         )
         chips.check(chipByFilter[Prefs.getFilter(this)] ?: R.id.c_todos)
         chips.setOnCheckedStateChangeListener { _, ids ->
@@ -199,6 +199,7 @@ class MainActivity : AppCompatActivity() {
                     val c = HuaweiClient(Prefs.getHwIp(ctx), Prefs.getHwUser(ctx), Prefs.getHwPassword(ctx))
                     h = c.deviceList()
                     bh = try { c.blockedMacs() } catch (_: Exception) { emptySet() }
+                    c.logout()
                 } catch (e: Exception) { errs.add("Totalplay: ${e.message}") }
                 Leido(x, h, bx, bh, errs)
             }
@@ -229,9 +230,14 @@ class MainActivity : AppCompatActivity() {
             "desconectados" -> visibles.filter { !it.online && !it.blocked }
             "totalplay" -> visibles.filter { it.source.startsWith("Totalplay") }
             "xiaomi" -> visibles.filter { it.source == "Xiaomi" }
+            "cable" -> visibles.filter { it.conn == "Cable" }
+            "wifi" -> visibles.filter { it.conn == "WiFi" }
             else -> visibles
         }.sortedWith(compareByDescending<Device> { it.online && !it.blocked }
-            .thenByDescending { it.blocked }.thenBy { it.displayName().lowercase() })
+            .thenByDescending { it.blocked }
+            // Dentro de cada grupo, primero los de cable, luego WiFi.
+            .thenBy { when (it.conn) { "Cable" -> 0; "WiFi" -> 1; else -> 2 } }
+            .thenBy { it.displayName().lowercase() })
         adapter.update(lista)
 
         val online = all.count { it.online && !it.blocked }
@@ -240,6 +246,8 @@ class MainActivity : AppCompatActivity() {
         status.text = getString(R.string.resumen_hdr, online, bloq, off)
         subStatus.text = buildString {
             append("Totalplay ").append(countHw).append(" · Xiaomi ").append(countXi)
+            val cable = all.count { it.conn == "Cable" && it.online }; val wifi = all.count { it.conn == "WiFi" && it.online }
+            if (cable + wifi > 0) append(" · cable ").append(cable).append(" · WiFi ").append(wifi)
             if (hidden.isNotEmpty()) append(" · ocultos ").append(hidden.size)
             append(" · mostrando ").append(lista.size)
             if (lastErrors.isNotEmpty()) append("\n").append(lastErrors.joinToString("\n"))
@@ -385,18 +393,27 @@ class MainActivity : AppCompatActivity() {
         val blocking = !d.blocked
         status.text = getString(if (blocking) R.string.bloqueando else R.string.permitiendo)
         lifecycleScope.launch {
-            val ok = withContext(Dispatchers.IO) {
+            val err: String? = withContext(Dispatchers.IO) {
                 try {
-                    MiWifiClient(Prefs.getIp(this@MainActivity), Prefs.getPassword(this@MainActivity))
-                        .setBlock(d.mac, blocking)
-                    true
-                } catch (e: Exception) { false }
+                    if (d.source.startsWith("Totalplay")) {
+                        val c = HuaweiClient(Prefs.getHwIp(this@MainActivity), Prefs.getHwUser(this@MainActivity), Prefs.getHwPassword(this@MainActivity))
+                        try { if (blocking) c.block(d.mac, d.displayName()) else c.unblock(d.mac) } finally { c.logout() }
+                    } else {
+                        MiWifiClient(Prefs.getIp(this@MainActivity), Prefs.getPassword(this@MainActivity))
+                            .setBlock(d.mac, blocking)
+                    }
+                    null
+                } catch (e: Exception) { e.message ?: e.toString() }
             }
-            Toast.makeText(
-                this@MainActivity,
-                if (ok) R.string.hecho else R.string.error_generico,
-                Toast.LENGTH_SHORT
-            ).show()
+            if (err == null) {
+                Toast.makeText(this@MainActivity, R.string.hecho, Toast.LENGTH_SHORT).show()
+            } else {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(if (blocking) R.string.bloquear else R.string.permitir)
+                    .setMessage(err)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
             refresh()
         }
     }

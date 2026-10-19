@@ -12,7 +12,9 @@ data class Device(
     // En qué equipo está conectado: "Xiaomi" o "Totalplay (Huawei)".
     val source: String = "Xiaomi",
     // Solo los equipos del Xiaomi se pueden bloquear/programar (por ahora).
-    val canBlock: Boolean = true
+    val canBlock: Boolean = true,
+    // Cómo está conectado: "Cable", "WiFi" o "" si el equipo no lo informa.
+    val conn: String = ""
 ) {
     fun displayName(): String = when {
         alias.isNotBlank() -> alias
