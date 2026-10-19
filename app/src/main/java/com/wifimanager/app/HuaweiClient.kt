@@ -193,7 +193,13 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
     private val WLAN_PAGES = listOf(
         "/html/amp/wlanbasic/wlanbasic.asp",
         "/html/bbsp/wlanbasic/wlanbasic.asp",
-        "/html/amp/wlanbasic/wlanbasic5g.asp"
+        "/html/amp/wlanbasic/wlanbasic5g.asp",
+        "/html/amp/wlanbasic/WlanBasic.asp",
+        "/html/amp/wlanbasic/wlanbasic24g.asp",
+        "/html/bbsp/wlan/wlanbasic.asp",
+        "/html/amp/wlan/wlanbasic.asp",
+        "/html/amp/wlanadvance/wlanadvance.asp",
+        "/html/bbsp/wlanmacfilter/wlanmacfilter.asp"
     )
 
     /** MACs que el módem tiene en filtro/lista negra (lectura; mejor esfuerzo). */
@@ -216,15 +222,42 @@ class HuaweiClient(ip: String, private val user: String, private val password: S
         return out
     }
 
-    /** Captura las páginas de filtro MAC y WiFi para poder implementar bloqueo/invitados. */
+    /** Captura lo relevante de las páginas de filtro MAC / WiFi para implementar bloqueo e invitados. */
     fun capturePages(): String {
         ensure()
         val sb = StringBuilder()
+        val keys = Regex("""setAction|addParameter|RequestFile|webSubmitForm|\.cgi|FilterMode|MACAddress|X_HW_Token|setParameter|SubmitForm|Enable|MacFilter|macFilter|wlanmacfilter|SsidBand|FilterPolicy|\.submit\(""")
+        val urlRe = Regex("""(?:href|src|action)\s*=\s*["']([^"']*(?:wlan|macfilter|Wlan|WLAN|ssid)[^"']*)["']""")
+        // Enlaces del menú principal: para descubrir la página de WiFi real.
+        for (p in listOf("/index.asp", "/html/bbsp/common/leftmenu.asp", "/html/amp/menu/menu.asp")) {
+            val body = try { get(p) } catch (e: Exception) { "" }
+            if (body.length < 200) continue
+            val links = urlRe.findAll(body).map { it.groupValues[1] }.toSet()
+            sb.append("=== ").append(p).append(" (").append(body.length).append(") enlaces wlan/macfilter:\n")
+            links.take(40).forEach { sb.append("  ").append(it).append("\n") }
+            sb.append("\n")
+        }
         for (p in MACFILTER_PAGES + WLAN_PAGES) {
             val body = try { get(p) } catch (e: Exception) { "ERR ${e.message}" }
             sb.append("=== ").append(p).append(" (").append(body.length).append(")\n")
-            val i = body.indexOf("new Array(")
-            sb.append(if (i >= 0) body.substring(i, minOf(body.length, i + 700)) else body.take(300)).append("\n\n")
+            if (body.length < 300) { sb.append(body.take(120)).append("\n\n"); continue }
+            // Constructores de datos presentes
+            val ctors = ENTRY.findAll(body).map { it.groupValues[1] }.groupingBy { it }.eachCount()
+            sb.append("ctors=").append(ctors).append("\n")
+            // Líneas clave (cómo se arma el envío)
+            var n = 0
+            for (line in body.lineSequence()) {
+                val t = line.trim()
+                if (t.isNotEmpty() && keys.containsMatchIn(t)) {
+                    sb.append("| ").append(t.take(160)).append("\n")
+                    if (++n >= 70) break
+                }
+            }
+            // Formularios e inputs
+            for (m in Regex("""<(?:form|input|select)[^>]*>""", RegexOption.IGNORE_CASE).findAll(body).take(40)) {
+                sb.append("# ").append(m.value.take(160)).append("\n")
+            }
+            sb.append("\n")
         }
         return sb.toString()
     }

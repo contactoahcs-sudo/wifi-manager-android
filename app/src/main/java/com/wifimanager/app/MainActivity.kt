@@ -378,7 +378,7 @@ class MainActivity : AppCompatActivity() {
                 catch (e: Exception) { "ERROR: ${e.message}" }
             }
             render()
-            AlertDialog.Builder(this@MainActivity).setTitle(R.string.diag_avanzado).setMessage(txt.take(6000))
+            AlertDialog.Builder(this@MainActivity).setTitle(R.string.diag_avanzado).setMessage(txt.take(14000))
                 .setPositiveButton(android.R.string.ok, null).show()
         }
     }
